@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use cid::multihash::Code;
 use cid::Cid;
 use fvm_ipld_encoding::tuple::{Deserialize_tuple, Serialize_tuple};
-use fvm_ipld_encoding::{to_vec, CborStore, DAG_CBOR};
+use fvm_ipld_encoding::{to_vec, CborStore, RawBytes, DAG_CBOR};
 use fvm_ipld_hamt::{Error as HamtError, Hamt};
 use fvm_sdk as sdk;
 use fvm_shared::address::{Address, SubnetID};
@@ -11,6 +11,7 @@ use fvm_shared::bigint::bigint_ser::BigIntDe;
 use fvm_shared::bigint::Zero;
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::econ::TokenAmount;
+use fvm_shared::MethodNum;
 
 use crate::abort;
 use crate::blockstore::*;
@@ -113,6 +114,25 @@ impl State {
         Ok(())
     }
 
+    pub fn send(
+        &mut self,
+        to: &Address,
+        method: MethodNum,
+        params: RawBytes,
+        value: TokenAmount,
+    ) -> anyhow::Result<()> {
+        if !self.testing {
+            sdk::send::send(to, method, params, value)?;
+        } else {
+            self.expected_msg.push(ExpectedSend {
+                to: to.clone(),
+                method,
+                params,
+                value,
+            });
+        }
+        Ok(())
+    }
     pub fn mutate_state(&mut self) {
         match self.status {
             Status::Instantiated => {
@@ -161,19 +181,17 @@ impl State {
         // first check if there is state already initialized
         let root = match sdk::sself::root() {
             Ok(root) => root,
-            // if err it may be because it's not tests so we're testing
-            Err(err) => return true,
+            // if err it may be because there's nothing so no state has
+            // been set
+            Err(err) => return false,
         };
 
         // Load the actor state from the state tree.
         match Blockstore.get_cbor::<Self>(&root) {
             // if we have state check if we are testing or not
             Ok(Some(state)) => return state.testing,
-            // if not found we are definitely testing
-            Ok(None) => return true,
-            // if it fails we can consider testing on, if it is an actual
-            // error it'll fail somewhere else.
-            Err(err) => return true,
+            // if not found we are definitely not testing
+            _ => return false,
         }
     }
 
@@ -210,6 +228,7 @@ impl Default for State {
             window_checks: Cid::default(),
             validator_set: Vec::new(),
             testing: true,
+            expected_msg: Vec::new(),
         }
     }
 }

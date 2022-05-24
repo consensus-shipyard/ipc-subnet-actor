@@ -1,11 +1,13 @@
 mod harness;
 use std::str::FromStr;
 
-use fil_hierarchical_subnet_actor::types::{ConsensusType, ConstructParams, Status};
+use fvm_ipld_encoding::RawBytes;
 use fvm_shared::address::{Address, SubnetID};
 use fvm_shared::econ::TokenAmount;
 
 use crate::harness::Harness;
+use fil_hierarchical_subnet_actor::ext;
+use fil_hierarchical_subnet_actor::types::{ConsensusType, ConstructParams, Status};
 
 #[test]
 fn test_constructor() {
@@ -35,10 +37,15 @@ fn test_join() {
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 1);
     assert_eq!(st.status, Status::Active);
-    assert_eq!(st.total_stake, 10_u64.pow(18)+&value);
-    h.verify_stake(&st, sender, value);
-
-    // TODO: Expect send!
+    assert_eq!(st.total_stake, 5_u64.pow(18) + &value);
+    h.verify_stake(&st, sender, value.clone());
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        ext::sca::Methods::Register as u64,
+        RawBytes::default(),
+        value,
+    );
 }
 
 fn std_params() -> ConstructParams {

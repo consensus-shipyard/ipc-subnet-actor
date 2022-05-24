@@ -98,29 +98,20 @@ impl SubnetActor for Actor {
         // if we have enough collateral, register in SCA
         if st.status == Status::Instantiated {
             if sdk::sself::current_balance() >= TokenAmount::from(ext::sca::MIN_STAKE) {
-                sdk::send::send(
+                st.send(
                     &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
                     ext::sca::Methods::Register as u64,
                     RawBytes::default(),
-                    amount.clone(),
+                    amount,
                 )?;
             }
         } else {
-            if !st.testing {
-                sdk::send::send(
-                    &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-                    ext::sca::Methods::AddStake as u64,
-                    RawBytes::default(),
-                    amount.clone(),
-                )?;
-            } else {
-                st.expected_msg.push(ExpectedSend {
-                    to: Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-                    method: ext::sca::Methods::AddStake as u64,
-                    params: RawBytes::default(),
-                    value: amount.clone(),
-                });
-            }
+            st.send(
+                &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+                ext::sca::Methods::AddStake as u64,
+                RawBytes::default(),
+                amount,
+            )?;
         }
         st.mutate_state();
         st.save();

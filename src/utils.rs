@@ -1,8 +1,10 @@
 use anyhow::anyhow;
 use fvm_ipld_encoding::tuple::{Deserialize_tuple, Serialize_tuple};
 use fvm_ipld_encoding::RawBytes;
-use fvm_sdk::sys::TokenAmount;
 use fvm_shared::address::{Address, SubnetID};
+use fvm_shared::bigint::bigint_ser;
+use fvm_shared::econ::TokenAmount;
+use fvm_shared::MethodNum;
 use serde::de;
 
 /// A macro to abort concisely.
@@ -22,6 +24,7 @@ pub struct ExpectedSend {
     pub to: Address,
     pub method: MethodNum,
     pub params: RawBytes,
+    #[serde(with = "bigint_ser")]
     pub value: TokenAmount,
 }
 
