@@ -18,6 +18,7 @@ use fvm_shared::state::StateTreeVersion;
 use fvm_shared::version::NetworkVersion;
 use fvm_shared::ActorID;
 use num_traits::Zero;
+use fil_actor_hierarchical_sca::State as SCAState;
 
 use fil_hierarchical_subnet_actor::blockstore::make_map_with_root;
 use fil_hierarchical_subnet_actor::state::{get_stake, State};
@@ -35,6 +36,11 @@ pub struct Harness {
 
 const WASM_COMPILED_PATH: &str =
     "target/debug/wbuild/fil_hierarchical_subnet_actor/fil_hierarchical_subnet_actor.compact.wasm";
+
+// FIXME: This is not being updated with the SCA. We should come up with a way
+// to dynamically compile and fetch an up to date WASM for SCA.
+const SCA_COMPILED_PATH: &str =
+    "tests/harness/fil_actor_hierarchical_sca.wasm";
 
 impl Harness {
     pub fn new() -> Self {

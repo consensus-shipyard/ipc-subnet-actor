@@ -72,11 +72,13 @@ impl SubnetActor for Actor {
         // i.e. the equivalent of the validate_* builtin-actors runtime methods.
         // https://github.com/filecoin-project/builtin-actors/blob/master/actors/runtime/src/runtime/fvm.rs#L110-L146
         const TEST: ActorID = 339;
-        if sdk::message::caller() != INIT_ACTOR_ADDR && sdk::message::caller() != TEST {
+        let is_test = State::is_test();
+        if sdk::message::caller() != INIT_ACTOR_ADDR && (sdk::message::caller() != TEST && is_test)
+        {
             abort!(USR_FORBIDDEN, "constructor invoked by non-init actor");
         }
 
-        let state = State::new(params);
+        let state = State::new(params, is_test);
         state.save();
         Ok(None)
     }
@@ -86,7 +88,10 @@ impl SubnetActor for Actor {
         let caller = Address::new_id(sdk::message::caller());
         let amount = sdk::message::value_received();
         if amount <= TokenAmount::zero() {
-            abort!(USR_ILLEGAL_ARGUMENT, "a minimum collateral is required to join the subnet");
+            abort!(
+                USR_ILLEGAL_ARGUMENT,
+                "a minimum collateral is required to join the subnet"
+            );
         }
         // increase collateral
         st.add_stake(&caller, &amount)?;
@@ -101,12 +106,21 @@ impl SubnetActor for Actor {
                 )?;
             }
         } else {
-            sdk::send::send(
-                &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-                ext::sca::Methods::AddStake as u64,
-                RawBytes::default(),
-                amount.clone(),
-            )?;
+            if !st.testing {
+                sdk::send::send(
+                    &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+                    ext::sca::Methods::AddStake as u64,
+                    RawBytes::default(),
+                    amount.clone(),
+                )?;
+            } else {
+                st.expected_msg.push(ExpectedSend {
+                    to: Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+                    method: ext::sca::Methods::AddStake as u64,
+                    params: RawBytes::default(),
+                    value: amount.clone(),
+                });
+            }
         }
         st.mutate_state();
         st.save();

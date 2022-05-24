@@ -16,6 +16,7 @@ use crate::abort;
 use crate::blockstore::*;
 use crate::ext;
 use crate::types::*;
+use crate::utils::ExpectedSend;
 
 /// The state object.
 #[derive(Serialize_tuple, Deserialize_tuple, Clone, Debug)]
@@ -34,13 +35,16 @@ pub struct State {
     pub checkpoints: Cid,   // HAMT[cid]Checkpoint
     pub window_checks: Cid, // HAMT[cid]Votes
     pub validator_set: Vec<Validator>,
+    // testing flag notifying that we are testing
+    pub testing: bool,
+    pub expected_msg: Vec<ExpectedSend>,
 }
 
 /// We should probably have a derive macro to mark an object as a state object,
 /// and have load and save methods automatically generated for them as part of a
 /// StateObject trait (i.e. impl StateObject for State).
 impl State {
-    pub fn new(params: ConstructParams) -> Self {
+    pub fn new(params: ConstructParams, is_test: bool) -> Self {
         let empty_checkpoint_map = match make_empty_map::<_, ()>(&Blockstore).flush() {
             Ok(c) => c,
             Err(e) => abort!(USR_ILLEGAL_STATE, "failed to create empty map: {:?}", e),
@@ -76,7 +80,9 @@ impl State {
             checkpoints: empty_checkpoint_map,
             stake: empty_stake_map,
             window_checks: empty_votes_map,
-            validator_set: vec![],
+            validator_set: Vec::new(),
+            testing: is_test,
+            expected_msg: Vec::new(),
         }
     }
 
@@ -150,6 +156,27 @@ impl State {
         }
     }
 
+    // check if initial test is for testing
+    pub fn is_test() -> bool {
+        // first check if there is state already initialized
+        let root = match sdk::sself::root() {
+            Ok(root) => root,
+            // if err it may be because it's not tests so we're testing
+            Err(err) => return true,
+        };
+
+        // Load the actor state from the state tree.
+        match Blockstore.get_cbor::<Self>(&root) {
+            // if we have state check if we are testing or not
+            Ok(Some(state)) => return state.testing,
+            // if not found we are definitely testing
+            Ok(None) => return true,
+            // if it fails we can consider testing on, if it is an actual
+            // error it'll fail somewhere else.
+            Err(err) => return true,
+        }
+    }
+
     pub fn save(&self) -> Cid {
         let serialized = match to_vec(self) {
             Ok(s) => s,
@@ -182,6 +209,7 @@ impl Default for State {
             stake: Cid::default(),
             window_checks: Cid::default(),
             validator_set: Vec::new(),
+            testing: true,
         }
     }
 }

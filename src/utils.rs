@@ -1,6 +1,9 @@
 use anyhow::anyhow;
-use fvm_ipld_encoding::{RawBytes};
-use serde::{de};
+use fvm_ipld_encoding::tuple::{Deserialize_tuple, Serialize_tuple};
+use fvm_ipld_encoding::RawBytes;
+use fvm_sdk::sys::TokenAmount;
+use fvm_shared::address::{Address, SubnetID};
+use serde::de;
 
 /// A macro to abort concisely.
 /// This should be part of the SDK as it's very handy.
@@ -12,6 +15,14 @@ macro_rules! abort {
             Some(format!($msg, $($ex,)*).as_str()),
         )
     };
+}
+
+#[derive(Serialize_tuple, Deserialize_tuple, Clone, Debug)]
+pub struct ExpectedSend {
+    pub to: Address,
+    pub method: MethodNum,
+    pub params: RawBytes,
+    pub value: TokenAmount,
 }
 
 // /// Serializes a structure as a CBOR vector of bytes, returning a serialization error on failure.
