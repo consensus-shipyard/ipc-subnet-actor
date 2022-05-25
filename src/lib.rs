@@ -102,7 +102,7 @@ impl SubnetActor for Actor {
                     &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
                     ext::sca::Methods::Register as u64,
                     RawBytes::default(),
-                    amount,
+                    st.total_stake.clone(),
                 )?;
             }
         } else {

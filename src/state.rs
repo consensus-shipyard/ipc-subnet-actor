@@ -183,7 +183,7 @@ impl State {
             Ok(root) => root,
             // if err it may be because there's nothing so no state has
             // been set
-            Err(err) => return false,
+            Err(_) => return false,
         };
 
         // Load the actor state from the state tree.

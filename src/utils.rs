@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use fvm_ipld_encoding::tuple::{Deserialize_tuple, Serialize_tuple};
 use fvm_ipld_encoding::RawBytes;
-use fvm_shared::address::{Address, SubnetID};
+use fvm_shared::address::Address;
 use fvm_shared::bigint::bigint_ser;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::MethodNum;

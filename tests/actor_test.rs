@@ -21,7 +21,7 @@ fn test_join() {
     h.constructor(std_params());
 
     // join without enough to be activated
-    let sender = Address::new_id(h.senders[0].0);
+    let sender = h.senders.get_sender_by_index(0).unwrap();
     let value = TokenAmount::from(5_u64.pow(18));
     h.join(sender, value.clone());
     let st = h.get_state();
@@ -30,21 +30,38 @@ fn test_join() {
     assert_eq!(st.total_stake, value);
     h.verify_stake(&st, sender, value);
 
-    // new miner joins and activates it
-    let sender = Address::new_id(h.senders[1].0);
-    let value = TokenAmount::from(10_u64.pow(18));
+    // miner adds stake and activates it
+    let sender = h.senders.get_sender_by_index(0).unwrap();
+    let value = TokenAmount::from(ext::sca::MIN_STAKE - 5_u64.pow(18));
     h.join(sender, value.clone());
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 1);
     assert_eq!(st.status, Status::Active);
-    assert_eq!(st.total_stake, 5_u64.pow(18) + &value);
-    h.verify_stake(&st, sender, value.clone());
+    assert_eq!(st.total_stake, TokenAmount::from(ext::sca::MIN_STAKE));
+    h.verify_stake(&st, sender, TokenAmount::from(ext::sca::MIN_STAKE));
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
         ext::sca::Methods::Register as u64,
         RawBytes::default(),
-        value,
+        TokenAmount::from(ext::sca::MIN_STAKE),
+    );
+
+    // new miner joins
+    let sender = h.senders.get_sender_by_index(1).unwrap();
+    let value = TokenAmount::from(ext::sca::MIN_STAKE);
+    h.join(sender, value.clone());
+    let st = h.get_state();
+    assert_eq!(st.validator_set.len(), 2);
+    assert_eq!(st.status, Status::Active);
+    assert_eq!(st.total_stake, TokenAmount::from(2 * ext::sca::MIN_STAKE));
+    h.verify_stake(&st, sender, value.clone());
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        ext::sca::Methods::AddStake as u64,
+        RawBytes::default(),
+        TokenAmount::from(ext::sca::MIN_STAKE),
     );
 }
 
@@ -52,7 +69,7 @@ fn std_params() -> ConstructParams {
     ConstructParams {
         parent: SubnetID::from_str("/root").unwrap(),
         name: String::from("test"),
-        consensus: ConsensusType::Delegated,
+        consensus: ConsensusType::PoW,
         min_validator_stake: TokenAmount::from(10_u64.pow(18)),
         check_period: 10,
         genesis: Vec::new(),

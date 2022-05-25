@@ -1433,7 +1433,7 @@ version = "7.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bddafc528905f95e815a28ac81433818212de27effbd5d9b5af11cc9b448937"
 dependencies = [
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
  "fvm_shared 0.7.0",
@@ -1469,7 +1469,7 @@ version = "7.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b48bde919c1c45b15600ce6c46d6c27f4e2430901fd7e94260ee3b39ab1a1b65"
 dependencies = [
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
  "fvm_shared 0.7.0",
@@ -1481,27 +1481,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fil_actor_hierarchical_sca"
-version = "8.0.0-alpha.1"
-source = "git+https://github.com/adlrocha/builtin-actors#7f7738897b9a27f14c06ff928be5b23a463fca53"
-dependencies = [
- "anyhow",
- "cid",
- "fil_actors_runtime 8.0.0-alpha.1",
- "fvm_ipld_blockstore 0.1.1",
- "fvm_ipld_encoding 0.2.1",
- "fvm_ipld_hamt 0.5.1",
- "fvm_shared 0.7.0",
- "indexmap",
- "integer-encoding",
- "lazy_static",
- "log",
- "num-derive",
- "num-traits",
- "serde",
-]
-
-[[package]]
 name = "fil_actor_init"
 version = "7.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1509,7 +1488,7 @@ checksum = "55bf83350c574109ea7b24b4a054407185b8323d56c8e0cee7ae583b92baeb78"
 dependencies = [
  "anyhow",
  "cid",
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
  "fvm_ipld_hamt 0.5.1",
@@ -1530,7 +1509,7 @@ dependencies = [
  "ahash",
  "anyhow",
  "cid",
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_bitfield",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
@@ -1553,7 +1532,7 @@ dependencies = [
  "anyhow",
  "byteorder 1.4.3",
  "cid",
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_amt 0.4.1",
  "fvm_ipld_bitfield",
  "fvm_ipld_blockstore 0.1.1",
@@ -1577,7 +1556,7 @@ checksum = "b93701a001b40f8f1c4e942e80300b3d87a9910f7ff9ff683a1945de9ade3987"
 dependencies = [
  "anyhow",
  "cid",
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
  "fvm_ipld_hamt 0.5.1",
@@ -1598,7 +1577,7 @@ checksum = "bfa58f718d6f187ef80a01f71e8c6425d95b31398a7a890526473d9d7142f2a7"
 dependencies = [
  "anyhow",
  "cid",
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
  "fvm_shared 0.7.0",
@@ -1616,7 +1595,7 @@ checksum = "dc8e358828f88beb6e008a1bd54d82a6d1f60a435ce6b012ed694d6659850c1a"
 dependencies = [
  "anyhow",
  "cid",
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
  "fvm_ipld_hamt 0.5.1",
@@ -1637,7 +1616,7 @@ version = "7.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9371c952f2ae9103cc177b9d1a6e7b16d1f38049ae5e8c3e8dff80a85a032f0c"
 dependencies = [
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
  "fvm_shared 0.7.0",
@@ -1655,7 +1634,7 @@ version = "7.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5cbb3020c7cc172662743496c07a9b2189771044d8c172c94bad4f521180d7c"
 dependencies = [
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
  "fvm_shared 0.7.0",
@@ -1672,7 +1651,7 @@ checksum = "558b6d4f49c4c805f7088ef6b523076ce6a86cd4aac38dea745109899b9031d6"
 dependencies = [
  "anyhow",
  "cid",
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
  "fvm_ipld_blockstore 0.1.1",
  "fvm_ipld_encoding 0.2.1",
  "fvm_ipld_hamt 0.5.1",
@@ -1718,38 +1697,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fil_actors_runtime"
-version = "8.0.0-alpha.1"
-source = "git+https://github.com/adlrocha/builtin-actors#7f7738897b9a27f14c06ff928be5b23a463fca53"
-dependencies = [
- "anyhow",
- "base64",
- "blake2b_simd 1.0.0",
- "byteorder 1.4.3",
- "cid",
- "fvm_ipld_amt 0.4.1",
- "fvm_ipld_blockstore 0.1.1",
- "fvm_ipld_encoding 0.2.1",
- "fvm_ipld_hamt 0.5.1",
- "fvm_sdk 1.0.0-rc.1",
- "fvm_shared 0.7.0",
- "getrandom 0.2.6",
- "indexmap",
- "integer-encoding",
- "lazy_static",
- "log",
- "multihash",
- "num-derive",
- "num-traits",
- "rand 0.8.5",
- "serde",
- "serde_repr",
- "sha2 0.10.2",
- "thiserror",
- "unsigned-varint",
-]
-
-[[package]]
 name = "fil_builtin_actors_bundle"
 version = "7.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1769,7 +1716,7 @@ dependencies = [
  "fil_actor_reward",
  "fil_actor_system",
  "fil_actor_verifreg",
- "fil_actors_runtime 7.5.0",
+ "fil_actors_runtime",
 ]
 
 [[package]]
@@ -1778,7 +1725,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cid",
- "fil_actor_hierarchical_sca",
  "fvm",
  "fvm_integration_tests",
  "fvm_ipld_blockstore 0.1.1 (git+https://github.com/adlrocha/ref-fvm)",

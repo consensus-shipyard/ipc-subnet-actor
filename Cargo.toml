@@ -17,7 +17,6 @@ serde = { version = "1.0.136", features = ["derive"] }
 serde_tuple = "0.5"
 anyhow = "1.0.56"
 num-traits = "0.2.14"
-fil_actor_hierarchical_sca = { git = "https://github.com/adlrocha/builtin-actors" }
 
 [dev-dependencies]
 # FIXME: Pointing to a fork of ref-fvm. This needs to change

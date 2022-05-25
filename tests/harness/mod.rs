@@ -1,7 +1,7 @@
+use std::collections::HashMap;
 use std::env;
 
 use cid::Cid;
-use fil_actor_hierarchical_sca::State as SCAState;
 use fvm::executor::ApplyKind;
 use fvm::executor::Executor;
 use fvm::machine::Machine;
@@ -32,16 +32,50 @@ pub const NUM_ACC: usize = 3;
 pub struct Harness {
     pub tester: Tester<MemoryBlockstore>,
     pub actor_address: Address,
-    pub senders: [Account; NUM_ACC],
+    pub senders: Senders,
     exp_msg_index: usize,
+}
+
+pub struct Senders {
+    pub m: HashMap<Address, u64>,
+}
+
+impl Senders {
+    pub fn new_from_accs(senders_vec: Vec<Account>) -> Self {
+        let mut out = Senders { m: HashMap::new() };
+        for s in &senders_vec {
+            out.m.insert(Address::new_id(s.0), 0);
+        }
+        out
+    }
+
+    pub fn add_sequence(&mut self, addr: &Address) {
+        if let Some(k) = self.m.get_mut(addr) {
+            *k += 1;
+        }
+    }
+
+    pub fn get_sequence(&self, addr: &Address) -> u64 {
+        *self.m.get(addr).unwrap()
+    }
+
+    pub fn get_sender_by_index(&self, index: usize) -> Option<Address> {
+        if index >= self.m.len() {
+            return None;
+        }
+        let mut i = 0;
+        for (k, _) in self.m.iter() {
+            if index == i {
+                return Some(*k);
+            }
+            i += 1;
+        }
+        None
+    }
 }
 
 const WASM_COMPILED_PATH: &str =
     "target/debug/wbuild/fil_hierarchical_subnet_actor/fil_hierarchical_subnet_actor.compact.wasm";
-
-// FIXME: This is not being updated with the SCA. We should come up with a way
-// to dynamically compile and fetch an up to date WASM for SCA.
-const SCA_COMPILED_PATH: &str = "tests/harness/fil_actor_hierarchical_sca.wasm";
 
 impl Harness {
     pub fn new() -> Self {
@@ -64,7 +98,8 @@ impl Harness {
         let state_cid = tester.set_state(&State::default()).unwrap();
 
         // initialize a list of senders
-        let senders: [Account; NUM_ACC] = tester.create_accounts().unwrap();
+        let senders_vec: [Account; NUM_ACC] = tester.create_accounts().unwrap();
+        let senders = Senders::new_from_accs(senders_vec.into());
 
         // Set actor
         let actor_address = Address::new_id(TEST_ACTOR_ADDR);
@@ -156,9 +191,11 @@ impl Harness {
             gas_limit: 1000000000,
             method_num: 2,
             params: RawBytes::default(),
-            value: value,
+            value,
+            sequence: self.senders.get_sequence(&sender),
             ..Message::default()
         };
+        self.senders.add_sequence(&sender);
 
         let res = self
             .tester
@@ -169,7 +206,7 @@ impl Harness {
             .unwrap();
 
         match res.failure_info {
-            Some(err) => println!(">>>>: {}", err),
+            Some(err) => println!("Failure traces: {}", err),
             None => {}
         };
 
