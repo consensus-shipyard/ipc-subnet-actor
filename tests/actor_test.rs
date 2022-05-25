@@ -4,6 +4,8 @@ use std::str::FromStr;
 use fvm_ipld_encoding::RawBytes;
 use fvm_shared::address::{Address, SubnetID};
 use fvm_shared::econ::TokenAmount;
+use fvm_shared::error::ExitCode;
+use fvm_shared::METHOD_SEND;
 
 use crate::harness::Harness;
 use fil_hierarchical_subnet_actor::ext;
@@ -62,6 +64,164 @@ fn test_join() {
         ext::sca::Methods::AddStake as u64,
         RawBytes::default(),
         TokenAmount::from(ext::sca::MIN_STAKE),
+    );
+}
+
+#[test]
+fn test_leave_and_kill() {
+    let mut h = Harness::new();
+    h.constructor(std_params());
+
+    // first miner joins the subnet
+    let sender = h.senders.get_sender_by_index(0).unwrap();
+    let value = TokenAmount::from(10_u64.pow(18));
+    let mut total_stake = value.clone();
+    h.join(sender, value.clone());
+    let st = h.get_state();
+    assert_eq!(st.validator_set.len(), 1);
+    assert_eq!(st.status, Status::Active);
+    assert_eq!(st.total_stake, total_stake);
+    h.verify_stake(&st, sender, value.clone());
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        ext::sca::Methods::Register as u64,
+        RawBytes::default(),
+        value.clone(),
+    );
+
+    // second miner joins the subnet
+    let sender = h.senders.get_sender_by_index(1).unwrap();
+    let value = TokenAmount::from(10_u64.pow(18));
+    total_stake = total_stake + &value;
+    h.join(sender, value.clone());
+    let st = h.get_state();
+    assert_eq!(st.validator_set.len(), 2);
+    assert_eq!(st.status, Status::Active);
+    assert_eq!(st.total_stake, total_stake);
+    h.verify_stake(&st, sender, value.clone());
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        ext::sca::Methods::AddStake as u64,
+        RawBytes::default(),
+        value,
+    );
+
+    // non-miner joins
+    let sender = h.senders.get_sender_by_index(2).unwrap();
+    let value = TokenAmount::from(5u64.pow(18));
+    total_stake = total_stake + &value;
+    h.join(sender, value.clone());
+    let st = h.get_state();
+    assert_eq!(st.validator_set.len(), 2);
+    assert_eq!(st.status, Status::Active);
+    assert_eq!(st.total_stake, total_stake);
+    h.verify_stake(&st, sender, value.clone());
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        ext::sca::Methods::AddStake as u64,
+        RawBytes::default(),
+        value,
+    );
+
+    // one miner leaves the subnet
+    let sender = h.senders.get_sender_by_index(0).unwrap();
+    let value = TokenAmount::from(ext::sca::MIN_STAKE);
+    total_stake = total_stake - &value;
+    h.leave(sender, value.clone());
+    let st = h.get_state();
+    assert_eq!(st.validator_set.len(), 1);
+    assert_eq!(st.status, Status::Active);
+    assert_eq!(st.total_stake, total_stake);
+    h.verify_stake(&st, sender, 0.into());
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        ext::sca::Methods::ReleaseStake as u64,
+        RawBytes::serialize(ext::sca::FundParams {
+            value: value.clone(),
+        })
+        .unwrap(),
+        0.into(),
+    );
+    h.expect_send(
+        &st,
+        &sender,
+        METHOD_SEND,
+        RawBytes::default(),
+        value.clone(),
+    );
+
+    // subnet can't be killed if there are still miners
+    h.kill(sender, ExitCode::USR_ILLEGAL_STATE);
+
+    // next miner inactivates the subnet
+    let sender = h.senders.get_sender_by_index(1).unwrap();
+    let value = TokenAmount::from(ext::sca::MIN_STAKE);
+    total_stake = total_stake - &value;
+    h.leave(sender, value.clone());
+    let st = h.get_state();
+    assert_eq!(st.validator_set.len(), 0);
+    assert_eq!(st.status, Status::Inactive);
+    assert_eq!(st.total_stake, total_stake);
+    h.verify_stake(&st, sender, 0.into());
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        ext::sca::Methods::ReleaseStake as u64,
+        RawBytes::serialize(ext::sca::FundParams {
+            value: value.clone(),
+        })
+        .unwrap(),
+        0.into(),
+    );
+    h.expect_send(
+        &st,
+        &sender,
+        METHOD_SEND,
+        RawBytes::default(),
+        value.clone(),
+    );
+
+    // last joiner gets the stake and kills the subnet
+    let sender = h.senders.get_sender_by_index(2).unwrap();
+    let value = TokenAmount::from(5u64.pow(18));
+    total_stake = total_stake - &value;
+    h.leave(sender, value.clone());
+    let st = h.get_state();
+    assert_eq!(st.validator_set.len(), 0);
+    assert_eq!(st.status, Status::Inactive);
+    assert_eq!(st.total_stake, total_stake);
+    h.verify_stake(&st, sender, 0.into());
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        ext::sca::Methods::ReleaseStake as u64,
+        RawBytes::serialize(ext::sca::FundParams {
+            value: value.clone(),
+        })
+        .unwrap(),
+        0.into(),
+    );
+    h.expect_send(
+        &st,
+        &sender,
+        METHOD_SEND,
+        RawBytes::default(),
+        value.clone(),
+    );
+    h.kill(sender, ExitCode::OK);
+    let st = h.get_state();
+    assert_eq!(st.total_stake, 0.into());
+    assert_eq!(st.status, Status::Killed);
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        ext::sca::Methods::Kill as u64,
+        RawBytes::default(),
+        0.into(),
     );
 }
 

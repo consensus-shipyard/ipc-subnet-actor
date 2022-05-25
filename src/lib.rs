@@ -8,11 +8,13 @@ use fvm_ipld_encoding::{RawBytes, DAG_CBOR};
 use fvm_sdk as sdk;
 use fvm_sdk::NO_DATA_BLOCK_ID;
 use fvm_shared::address::Address;
+use fvm_shared::bigint::bigint_ser::BigIntDe;
 use fvm_shared::econ::TokenAmount;
-use fvm_shared::ActorID;
+use fvm_shared::{ActorID, METHOD_SEND};
 use num_traits::Zero;
 
-use crate::state::State;
+use crate::blockstore::*;
+use crate::state::{get_stake, State};
 use crate::types::*;
 use crate::utils::*;
 
@@ -31,8 +33,8 @@ pub fn invoke(params: u32) -> u32 {
     let ret: anyhow::Result<Option<RawBytes>> = match sdk::message::method_number() {
         1 => Actor::constructor(deserialize_params(&params).unwrap()),
         2 => Actor::join(),
-        // 3 => Actor::leave(),
-        // 4 => Actor::kill(),
+        3 => Actor::leave(),
+        4 => Actor::kill(),
         // 5 => Actor::submit_checkpoint(),
         _ => abort!(USR_UNHANDLED_MESSAGE, "unrecognized method"),
     };
@@ -52,8 +54,8 @@ pub fn invoke(params: u32) -> u32 {
 pub trait SubnetActor {
     fn constructor(params: ConstructParams) -> anyhow::Result<Option<RawBytes>>;
     fn join() -> anyhow::Result<Option<RawBytes>>;
-    // fn leave() -> Option<RawBytes>;
-    // fn kill() -> Option<RawBytes>;
+    fn leave() -> anyhow::Result<Option<RawBytes>>;
+    fn kill() -> anyhow::Result<Option<RawBytes>>;
     // fn submit_checkpoint() -> Option<RawBytes>;
 }
 
@@ -113,6 +115,72 @@ impl SubnetActor for Actor {
                 amount,
             )?;
         }
+        st.mutate_state();
+        st.save();
+        Ok(None)
+    }
+
+    fn leave() -> anyhow::Result<Option<RawBytes>> {
+        let mut st = State::load();
+        let caller = Address::new_id(sdk::message::caller());
+
+        // get stake to know how much to release
+        let bt = make_map_with_root::<_, BigIntDe>(&st.stake, &Blockstore)?;
+        let stake = get_stake(&bt, &caller.clone())?;
+        if stake == TokenAmount::zero() {
+            abort!(USR_ILLEGAL_STATE, "caller has no stake in subnet");
+        }
+
+        // release from SCA
+        if st.status != Status::Terminating {
+            st.send(
+                &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+                ext::sca::Methods::ReleaseStake as u64,
+                RawBytes::serialize(ext::sca::FundParams {
+                    value: stake.clone(),
+                })?,
+                TokenAmount::zero(),
+            )?;
+        }
+
+        // remove stake from balance table
+        st.rm_stake(&caller, &stake)?;
+
+        // send back to owner
+        st.send(&caller, METHOD_SEND, RawBytes::default(), stake)?;
+
+        st.mutate_state();
+        st.save();
+        Ok(None)
+    }
+
+    fn kill() -> anyhow::Result<Option<RawBytes>> {
+        let mut st = State::load();
+
+        if st.status == Status::Terminating || st.status == Status::Killed {
+            abort!(
+                USR_ILLEGAL_STATE,
+                "the subnet is already in a killed or terminating state"
+            );
+        }
+        if st.validator_set.len() != 0 {
+            abort!(
+                USR_ILLEGAL_STATE,
+                "this subnet can only be killed when all validators have left"
+            );
+        }
+
+        // move to terminating state
+        st.status = Status::Terminating;
+
+        // unregister subnet
+        st.send(
+            &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+            ext::sca::Methods::Kill as u64,
+            RawBytes::default(),
+            TokenAmount::zero(),
+        )?;
+
         st.mutate_state();
         st.save();
         Ok(None)

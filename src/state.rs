@@ -114,6 +114,28 @@ impl State {
         Ok(())
     }
 
+    pub fn rm_stake(&mut self, addr: &Address, amount: &TokenAmount) -> anyhow::Result<()> {
+        // update miner stake
+        let mut bt = make_map_with_root::<_, BigIntDe>(&self.stake, &Blockstore)?;
+        let stake = get_stake(&bt, addr)
+            .map_err(|e| anyhow!(format!("error getting stake from Hamt: {:?}", e)))?;
+        // funds being returned
+        let mut stake = stake / LEAVING_COEFF;
+        stake -= amount;
+        set_stake(&mut bt, addr, stake.clone())?;
+        self.stake = bt.flush()?;
+
+        // update total collateral
+        self.total_stake -= amount;
+
+        // remove miner from list of validators
+        // NOTE: We currently only support full recovery of collateral.
+        // And additional check will be needed here if we consider part-recoveries.
+        self.validator_set.retain(|x| x.addr != *addr);
+
+        Ok(())
+    }
+
     pub fn send(
         &mut self,
         to: &Address,
@@ -150,9 +172,11 @@ impl State {
                     self.status = Status::Active
                 }
             }
+            // if no total_stake and current_balance left (except if we are testing where the funds
+            // are never leaving the actor)
             Status::Terminating => {
                 if self.total_stake == TokenAmount::zero()
-                    && sdk::sself::current_balance() == TokenAmount::zero()
+                    && (sdk::sself::current_balance() == TokenAmount::zero() || self.testing)
                 {
                     self.status = Status::Killed
                 }

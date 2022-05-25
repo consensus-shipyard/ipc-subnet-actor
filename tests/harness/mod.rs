@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::env;
 
 use cid::Cid;
+use fil_hierarchical_subnet_actor::ext;
 use fvm::executor::ApplyKind;
 use fvm::executor::Executor;
 use fvm::machine::Machine;
@@ -214,6 +215,67 @@ impl Harness {
             ExitCode::from(res.msg_receipt.exit_code.value()),
             ExitCode::OK
         );
+    }
+
+    pub fn leave(&mut self, sender: Address, value: TokenAmount) {
+        let message = Message {
+            from: sender,
+            to: self.actor_address,
+            gas_limit: 1000000000,
+            method_num: 3,
+            params: RawBytes::serialize(ext::sca::FundParams { value }).unwrap(),
+            value: TokenAmount::zero(),
+            sequence: self.senders.get_sequence(&sender),
+            ..Message::default()
+        };
+        self.senders.add_sequence(&sender);
+
+        let res = self
+            .tester
+            .executor
+            .as_mut()
+            .unwrap()
+            .execute_message(message, ApplyKind::Explicit, 100)
+            .unwrap();
+
+        match res.failure_info {
+            Some(err) => println!("Failure traces: {}", err),
+            None => {}
+        };
+
+        assert_eq!(
+            ExitCode::from(res.msg_receipt.exit_code.value()),
+            ExitCode::OK
+        );
+    }
+
+    pub fn kill(&mut self, sender: Address, code: ExitCode) {
+        let message = Message {
+            from: sender,
+            to: self.actor_address,
+            gas_limit: 1000000000,
+            method_num: 4,
+            params: RawBytes::default(),
+            value: TokenAmount::zero(),
+            sequence: self.senders.get_sequence(&sender),
+            ..Message::default()
+        };
+        self.senders.add_sequence(&sender);
+
+        let res = self
+            .tester
+            .executor
+            .as_mut()
+            .unwrap()
+            .execute_message(message, ApplyKind::Explicit, 100)
+            .unwrap();
+
+        match res.failure_info {
+            Some(err) => println!("Failure traces: {}", err),
+            None => {}
+        };
+
+        assert_eq!(ExitCode::from(res.msg_receipt.exit_code.value()), code);
     }
 
     pub fn verify_stake(&self, st: &State, addr: Address, expect: TokenAmount) {

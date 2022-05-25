@@ -6,6 +6,13 @@ use fvm_shared::bigint::bigint_ser;
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::econ::TokenAmount;
 
+/// Optional leaving coefficient to penalize
+/// validators leaving the subnet.
+// It should be a float between 0-1 but
+// setting it to 1_u64 for now for convenience.
+// This will change once we figure out the econ model.
+pub const LEAVING_COEFF: u64 = 1;
+
 #[derive(Clone, Debug, Serialize_tuple, Deserialize_tuple, PartialEq)]
 pub struct Validator {
     pub subnet: SubnetID,
