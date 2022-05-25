@@ -1,6 +1,7 @@
 mod harness;
 use std::str::FromStr;
 
+use fil_actor_hierarchical_sca::{FundParams, Method, MIN_COLLATERAL_AMOUNT};
 use fvm_ipld_encoding::RawBytes;
 use fvm_shared::address::{Address, SubnetID};
 use fvm_shared::econ::TokenAmount;
@@ -34,36 +35,36 @@ fn test_join() {
 
     // miner adds stake and activates it
     let sender = h.senders.get_sender_by_index(0).unwrap();
-    let value = TokenAmount::from(ext::sca::MIN_STAKE - 5_u64.pow(18));
+    let value = TokenAmount::from(MIN_COLLATERAL_AMOUNT - 5_u64.pow(18));
     h.join(sender, value.clone());
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 1);
     assert_eq!(st.status, Status::Active);
-    assert_eq!(st.total_stake, TokenAmount::from(ext::sca::MIN_STAKE));
-    h.verify_stake(&st, sender, TokenAmount::from(ext::sca::MIN_STAKE));
+    assert_eq!(st.total_stake, TokenAmount::from(MIN_COLLATERAL_AMOUNT));
+    h.verify_stake(&st, sender, TokenAmount::from(MIN_COLLATERAL_AMOUNT));
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-        ext::sca::Methods::Register as u64,
+        Method::Register as u64,
         RawBytes::default(),
-        TokenAmount::from(ext::sca::MIN_STAKE),
+        TokenAmount::from(MIN_COLLATERAL_AMOUNT),
     );
 
     // new miner joins
     let sender = h.senders.get_sender_by_index(1).unwrap();
-    let value = TokenAmount::from(ext::sca::MIN_STAKE);
+    let value = TokenAmount::from(MIN_COLLATERAL_AMOUNT);
     h.join(sender, value.clone());
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 2);
     assert_eq!(st.status, Status::Active);
-    assert_eq!(st.total_stake, TokenAmount::from(2 * ext::sca::MIN_STAKE));
+    assert_eq!(st.total_stake, TokenAmount::from(2 * MIN_COLLATERAL_AMOUNT));
     h.verify_stake(&st, sender, value.clone());
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-        ext::sca::Methods::AddStake as u64,
+        Method::AddStake as u64,
         RawBytes::default(),
-        TokenAmount::from(ext::sca::MIN_STAKE),
+        TokenAmount::from(MIN_COLLATERAL_AMOUNT),
     );
 }
 
@@ -85,7 +86,7 @@ fn test_leave_and_kill() {
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-        ext::sca::Methods::Register as u64,
+        Method::Register as u64,
         RawBytes::default(),
         value.clone(),
     );
@@ -103,7 +104,7 @@ fn test_leave_and_kill() {
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-        ext::sca::Methods::AddStake as u64,
+        Method::AddStake as u64,
         RawBytes::default(),
         value,
     );
@@ -121,14 +122,14 @@ fn test_leave_and_kill() {
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-        ext::sca::Methods::AddStake as u64,
+        Method::AddStake as u64,
         RawBytes::default(),
         value,
     );
 
     // one miner leaves the subnet
     let sender = h.senders.get_sender_by_index(0).unwrap();
-    let value = TokenAmount::from(ext::sca::MIN_STAKE);
+    let value = TokenAmount::from(MIN_COLLATERAL_AMOUNT);
     total_stake = total_stake - &value;
     h.leave(sender, value.clone());
     let st = h.get_state();
@@ -139,8 +140,8 @@ fn test_leave_and_kill() {
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-        ext::sca::Methods::ReleaseStake as u64,
-        RawBytes::serialize(ext::sca::FundParams {
+        Method::ReleaseStake as u64,
+        RawBytes::serialize(FundParams {
             value: value.clone(),
         })
         .unwrap(),
@@ -159,7 +160,7 @@ fn test_leave_and_kill() {
 
     // next miner inactivates the subnet
     let sender = h.senders.get_sender_by_index(1).unwrap();
-    let value = TokenAmount::from(ext::sca::MIN_STAKE);
+    let value = TokenAmount::from(MIN_COLLATERAL_AMOUNT);
     total_stake = total_stake - &value;
     h.leave(sender, value.clone());
     let st = h.get_state();
@@ -170,8 +171,8 @@ fn test_leave_and_kill() {
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-        ext::sca::Methods::ReleaseStake as u64,
-        RawBytes::serialize(ext::sca::FundParams {
+        Method::ReleaseStake as u64,
+        RawBytes::serialize(FundParams {
             value: value.clone(),
         })
         .unwrap(),
@@ -198,8 +199,8 @@ fn test_leave_and_kill() {
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-        ext::sca::Methods::ReleaseStake as u64,
-        RawBytes::serialize(ext::sca::FundParams {
+        Method::ReleaseStake as u64,
+        RawBytes::serialize(FundParams {
             value: value.clone(),
         })
         .unwrap(),
@@ -219,7 +220,7 @@ fn test_leave_and_kill() {
     h.expect_send(
         &st,
         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-        ext::sca::Methods::Kill as u64,
+        Method::Kill as u64,
         RawBytes::default(),
         0.into(),
     );

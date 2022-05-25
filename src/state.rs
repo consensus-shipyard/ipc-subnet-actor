@@ -13,9 +13,10 @@ use fvm_shared::clock::ChainEpoch;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::MethodNum;
 
+use fil_actor_hierarchical_sca::{DEFAULT_CHECKPOINT_PERIOD, MIN_COLLATERAL_AMOUNT};
+
 use crate::abort;
 use crate::blockstore::*;
-use crate::ext;
 use crate::types::*;
 use crate::utils::ExpectedSend;
 
@@ -59,7 +60,7 @@ impl State {
             Err(e) => abort!(USR_ILLEGAL_STATE, "failed to create empty map: {:?}", e),
         };
 
-        let min_stake = TokenAmount::from(ext::sca::MIN_STAKE);
+        let min_stake = TokenAmount::from(MIN_COLLATERAL_AMOUNT);
 
         State {
             name: params.name,
@@ -71,8 +72,8 @@ impl State {
             } else {
                 params.min_validator_stake
             },
-            check_period: if params.check_period < ext::sca::MIN_CHECK_PERIOD {
-                ext::sca::MIN_CHECK_PERIOD
+            check_period: if params.check_period < DEFAULT_CHECKPOINT_PERIOD {
+                DEFAULT_CHECKPOINT_PERIOD
             } else {
                 params.check_period
             },
@@ -158,17 +159,17 @@ impl State {
     pub fn mutate_state(&mut self) {
         match self.status {
             Status::Instantiated => {
-                if self.total_stake >= TokenAmount::from(ext::sca::MIN_STAKE) {
+                if self.total_stake >= TokenAmount::from(MIN_COLLATERAL_AMOUNT) {
                     self.status = Status::Active
                 }
             }
             Status::Active => {
-                if self.total_stake < TokenAmount::from(ext::sca::MIN_STAKE) {
+                if self.total_stake < TokenAmount::from(MIN_COLLATERAL_AMOUNT) {
                     self.status = Status::Inactive
                 }
             }
             Status::Inactive => {
-                if self.total_stake >= TokenAmount::from(ext::sca::MIN_STAKE) {
+                if self.total_stake >= TokenAmount::from(MIN_COLLATERAL_AMOUNT) {
                     self.status = Status::Active
                 }
             }
@@ -242,7 +243,7 @@ impl Default for State {
             name: String::new(),
             parent_id: SubnetID::default(),
             consensus: ConsensusType::Delegated,
-            min_validator_stake: TokenAmount::from(ext::sca::MIN_STAKE),
+            min_validator_stake: TokenAmount::from(MIN_COLLATERAL_AMOUNT),
             total_stake: TokenAmount::zero(),
             check_period: 10,
             genesis: Vec::new(),

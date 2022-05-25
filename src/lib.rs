@@ -4,6 +4,7 @@ pub mod state;
 pub mod types;
 mod utils;
 
+use fil_actor_hierarchical_sca::{FundParams, Method, MIN_COLLATERAL_AMOUNT};
 use fvm_ipld_encoding::{RawBytes, DAG_CBOR};
 use fvm_sdk as sdk;
 use fvm_sdk::NO_DATA_BLOCK_ID;
@@ -99,10 +100,10 @@ impl SubnetActor for Actor {
         st.add_stake(&caller, &amount)?;
         // if we have enough collateral, register in SCA
         if st.status == Status::Instantiated {
-            if sdk::sself::current_balance() >= TokenAmount::from(ext::sca::MIN_STAKE) {
+            if sdk::sself::current_balance() >= TokenAmount::from(MIN_COLLATERAL_AMOUNT) {
                 st.send(
                     &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-                    ext::sca::Methods::Register as u64,
+                    Method::Register as u64,
                     RawBytes::default(),
                     st.total_stake.clone(),
                 )?;
@@ -110,7 +111,7 @@ impl SubnetActor for Actor {
         } else {
             st.send(
                 &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-                ext::sca::Methods::AddStake as u64,
+                Method::AddStake as u64,
                 RawBytes::default(),
                 amount,
             )?;
@@ -135,8 +136,8 @@ impl SubnetActor for Actor {
         if st.status != Status::Terminating {
             st.send(
                 &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-                ext::sca::Methods::ReleaseStake as u64,
-                RawBytes::serialize(ext::sca::FundParams {
+                Method::ReleaseStake as u64,
+                RawBytes::serialize(FundParams {
                     value: stake.clone(),
                 })?,
                 TokenAmount::zero(),
@@ -176,7 +177,7 @@ impl SubnetActor for Actor {
         // unregister subnet
         st.send(
             &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-            ext::sca::Methods::Kill as u64,
+            Method::Kill as u64,
             RawBytes::default(),
             TokenAmount::zero(),
         )?;

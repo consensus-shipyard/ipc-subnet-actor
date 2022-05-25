@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 
 use cid::Cid;
-use fil_hierarchical_subnet_actor::ext;
+use fil_actor_hierarchical_sca::FundParams;
 use fvm::executor::ApplyKind;
 use fvm::executor::Executor;
 use fvm::machine::Machine;
@@ -223,7 +223,7 @@ impl Harness {
             to: self.actor_address,
             gas_limit: 1000000000,
             method_num: 3,
-            params: RawBytes::serialize(ext::sca::FundParams { value }).unwrap(),
+            params: RawBytes::serialize(FundParams { value }).unwrap(),
             value: TokenAmount::zero(),
             sequence: self.senders.get_sequence(&sender),
             ..Message::default()
