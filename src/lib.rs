@@ -4,15 +4,21 @@ pub mod state;
 pub mod types;
 mod utils;
 
-use fil_actor_hierarchical_sca::{FundParams, Method, MIN_COLLATERAL_AMOUNT};
+use anyhow::anyhow;
+use cid::Cid;
+use ext::sca::SCA_ACTOR_ADDR;
+use fil_actor_hierarchical_sca::{Checkpoint, FundParams, Method, MIN_COLLATERAL_AMOUNT};
 use fvm_ipld_encoding::{RawBytes, DAG_CBOR};
 use fvm_sdk as sdk;
 use fvm_sdk::NO_DATA_BLOCK_ID;
+use fvm_shared::actor::builtin::Type;
 use fvm_shared::address::Address;
 use fvm_shared::bigint::bigint_ser::BigIntDe;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::{ActorID, METHOD_SEND};
 use num_traits::Zero;
+use sdk::actor::get_actor_code_cid;
+use state::get_votes;
 
 use crate::blockstore::*;
 use crate::state::{get_stake, State};
@@ -36,7 +42,7 @@ pub fn invoke(params: u32) -> u32 {
         2 => Actor::join(),
         3 => Actor::leave(),
         4 => Actor::kill(),
-        // 5 => Actor::submit_checkpoint(),
+        5 => Actor::submit_checkpoint(deserialize_params(&params).unwrap()),
         _ => abort!(USR_UNHANDLED_MESSAGE, "unrecognized method"),
     };
 
@@ -57,7 +63,7 @@ pub trait SubnetActor {
     fn join() -> anyhow::Result<Option<RawBytes>>;
     fn leave() -> anyhow::Result<Option<RawBytes>>;
     fn kill() -> anyhow::Result<Option<RawBytes>>;
-    // fn submit_checkpoint() -> Option<RawBytes>;
+    fn submit_checkpoint(ch: Checkpoint) -> anyhow::Result<Option<RawBytes>>;
 }
 
 pub struct Actor;
@@ -89,6 +95,12 @@ impl SubnetActor for Actor {
     fn join() -> anyhow::Result<Option<RawBytes>> {
         let mut st = State::load();
         let caller = Address::new_id(sdk::message::caller());
+        // check type of caller
+        let code_cid = get_actor_code_cid(&caller).unwrap_or(Cid::default());
+        if sdk::actor::get_builtin_actor_type(&code_cid) != Some(Type::Account) {
+            abort!(USR_FORBIDDEN, "caller not account actor type");
+        }
+
         let amount = sdk::message::value_received();
         if amount <= TokenAmount::zero() {
             abort!(
@@ -124,6 +136,11 @@ impl SubnetActor for Actor {
     fn leave() -> anyhow::Result<Option<RawBytes>> {
         let mut st = State::load();
         let caller = Address::new_id(sdk::message::caller());
+        // check type of caller
+        let code_cid = get_actor_code_cid(&caller).unwrap_or(Cid::default());
+        if sdk::actor::get_builtin_actor_type(&code_cid) != Some(Type::Account) {
+            abort!(USR_FORBIDDEN, "caller not account actor type");
+        }
 
         // get stake to know how much to release
         let bt = make_map_with_root::<_, BigIntDe>(&st.stake, &Blockstore)?;
@@ -187,17 +204,63 @@ impl SubnetActor for Actor {
         Ok(None)
     }
 
-    /*
-    fn leave() -> Option<RawBytes> {
-        panic!("not implemented");
-    }
+    fn submit_checkpoint(checkpoint: Checkpoint) -> anyhow::Result<Option<RawBytes>> {
+        let mut st = State::load();
+        let caller = Address::new_id(sdk::message::caller());
+        // check type of caller
+        let code_cid = get_actor_code_cid(&caller).unwrap_or(Cid::default());
+        if sdk::actor::get_builtin_actor_type(&code_cid) != Some(Type::Account) {
+            abort!(USR_FORBIDDEN, "caller not account actor type");
+        }
 
-    fn kill() -> Option<RawBytes> {
-        panic!("not implemented");
-    }
+        let ch_cid = checkpoint.cid();
+        // verify checkpoint
+        st.verify_checkpoint(&checkpoint)?;
 
-    fn submit_checkpoint() -> Option<RawBytes> {
-        panic!("not implemented");
+        // get votes for committed checkpoint
+        let mut votes_map = make_map_with_root::<_, Votes>(&st.window_checks, &Blockstore)
+            .map_err(|e| anyhow!("failed to load checkpoints: {}", e))?;
+        let mut found = false;
+        let mut votes = match get_votes(&votes_map, &ch_cid)? {
+            Some(v) => {
+                found = true;
+                v.clone()
+            }
+            None => Votes {
+                validators: Vec::new(),
+            },
+        };
+        if !st.validator_set.iter().any(|x| x.addr == caller) {
+            return Err(anyhow!("miner has already voted the checkpoint"));
+        }
+
+        // add miner vote
+        votes.validators.push(caller);
+
+        // if has majority
+        if st.has_majority_vote(&votes)? {
+            // commit checkpoint
+            st.flush_checkpoint::<&Blockstore>(&checkpoint)?;
+            // propagate to sca
+            st.send(
+                &Address::new_id(SCA_ACTOR_ADDR),
+                Method::CommitChildCheckpoint as u64,
+                RawBytes::serialize(checkpoint)?,
+                0.into(),
+            )?;
+            // remove votes used for commitment
+            if found {
+                votes_map.delete(&ch_cid.to_bytes())?;
+            }
+        } else {
+            // if no majority store vote and return
+            votes_map.set(ch_cid.to_bytes().into(), votes)?;
+        }
+
+        // flush votes
+        st.window_checks = votes_map.flush()?;
+
+        st.save();
+        Ok(None)
     }
-    */
 }

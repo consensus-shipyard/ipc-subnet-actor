@@ -159,9 +159,9 @@ dependencies = [
 
 [[package]]
 name = "async-io"
-version = "1.6.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a811e6a479f2439f0c04038796b5cfb3d2ad56c230e0f2d3f7b04d68cfee607b"
+checksum = "e5e18f61464ae81cde0a23e713ae8fd299580c54d697a35820cfd0625b8b0e07"
 dependencies = [
  "concurrent-queue",
  "futures-lite",
@@ -641,9 +641,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cid"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a52cffa791ce5cf490ac3b2d6df970dc04f931b04e727be3c3e220e17164dfc4"
+checksum = "fc949bff6704880faf064c42a4854032ab07bfcf3a4fcb82a57470acededb69c"
 dependencies = [
  "core2",
  "multibase",
@@ -1483,7 +1483,7 @@ dependencies = [
 [[package]]
 name = "fil_actor_hierarchical_sca"
 version = "8.0.0-alpha.1"
-source = "git+https://github.com/adlrocha/builtin-actors#7f7738897b9a27f14c06ff928be5b23a463fca53"
+source = "git+https://github.com/adlrocha/builtin-actors#fab1429ad63822dad4f2d927c17ea58bc17dff22"
 dependencies = [
  "anyhow",
  "cid",
@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "fil_actors_runtime"
 version = "8.0.0-alpha.1"
-source = "git+https://github.com/adlrocha/builtin-actors#7f7738897b9a27f14c06ff928be5b23a463fca53"
+source = "git+https://github.com/adlrocha/builtin-actors#fab1429ad63822dad4f2d927c17ea58bc17dff22"
 dependencies = [
  "anyhow",
  "base64",
@@ -1786,8 +1786,10 @@ dependencies = [
  "fvm_ipld_hamt 0.5.1 (git+https://github.com/adlrocha/ref-fvm)",
  "fvm_sdk 1.0.0-rc.1 (git+https://github.com/adlrocha/ref-fvm)",
  "fvm_shared 0.7.0 (git+https://github.com/adlrocha/ref-fvm)",
+ "lazy_static",
  "libsecp256k1",
  "multihash",
+ "num",
  "num-traits",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -2085,7 +2087,7 @@ dependencies = [
 [[package]]
 name = "fvm"
 version = "1.0.0-rc.1"
-source = "git+https://github.com/adlrocha/ref-fvm#d632a0f5333ab895f0de78c0d31bc9a31dad59e8"
+source = "git+https://github.com/adlrocha/ref-fvm#6c56e1747068c0931e23007c9b4cc94b82629220"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2131,7 +2133,7 @@ dependencies = [
 [[package]]
 name = "fvm_integration_tests"
 version = "0.1.0"
-source = "git+https://github.com/adlrocha/ref-fvm#d632a0f5333ab895f0de78c0d31bc9a31dad59e8"
+source = "git+https://github.com/adlrocha/ref-fvm#6c56e1747068c0931e23007c9b4cc94b82629220"
 dependencies = [
  "anyhow",
  "cid",
@@ -2175,7 +2177,7 @@ dependencies = [
 [[package]]
 name = "fvm_ipld_amt"
 version = "0.4.1"
-source = "git+https://github.com/adlrocha/ref-fvm#d632a0f5333ab895f0de78c0d31bc9a31dad59e8"
+source = "git+https://github.com/adlrocha/ref-fvm#6c56e1747068c0931e23007c9b4cc94b82629220"
 dependencies = [
  "anyhow",
  "cid",
@@ -2210,7 +2212,7 @@ dependencies = [
 [[package]]
 name = "fvm_ipld_blockstore"
 version = "0.1.1"
-source = "git+https://github.com/adlrocha/ref-fvm#d632a0f5333ab895f0de78c0d31bc9a31dad59e8"
+source = "git+https://github.com/adlrocha/ref-fvm#6c56e1747068c0931e23007c9b4cc94b82629220"
 dependencies = [
  "anyhow",
  "cid",
@@ -2235,7 +2237,7 @@ dependencies = [
 [[package]]
 name = "fvm_ipld_car"
 version = "0.4.1"
-source = "git+https://github.com/adlrocha/ref-fvm#d632a0f5333ab895f0de78c0d31bc9a31dad59e8"
+source = "git+https://github.com/adlrocha/ref-fvm#6c56e1747068c0931e23007c9b4cc94b82629220"
 dependencies = [
  "cid",
  "futures",
@@ -2265,7 +2267,7 @@ dependencies = [
 [[package]]
 name = "fvm_ipld_encoding"
 version = "0.2.1"
-source = "git+https://github.com/adlrocha/ref-fvm#d632a0f5333ab895f0de78c0d31bc9a31dad59e8"
+source = "git+https://github.com/adlrocha/ref-fvm#6c56e1747068c0931e23007c9b4cc94b82629220"
 dependencies = [
  "anyhow",
  "cid",
@@ -2301,7 +2303,7 @@ dependencies = [
 [[package]]
 name = "fvm_ipld_hamt"
 version = "0.5.1"
-source = "git+https://github.com/adlrocha/ref-fvm#d632a0f5333ab895f0de78c0d31bc9a31dad59e8"
+source = "git+https://github.com/adlrocha/ref-fvm#6c56e1747068c0931e23007c9b4cc94b82629220"
 dependencies = [
  "anyhow",
  "byteorder 1.4.3",
@@ -2334,7 +2336,7 @@ dependencies = [
 [[package]]
 name = "fvm_sdk"
 version = "1.0.0-rc.1"
-source = "git+https://github.com/adlrocha/ref-fvm#d632a0f5333ab895f0de78c0d31bc9a31dad59e8"
+source = "git+https://github.com/adlrocha/ref-fvm#6c56e1747068c0931e23007c9b4cc94b82629220"
 dependencies = [
  "cid",
  "fvm_ipld_encoding 0.2.1 (git+https://github.com/adlrocha/ref-fvm)",
@@ -2376,7 +2378,7 @@ dependencies = [
 [[package]]
 name = "fvm_shared"
 version = "0.7.0"
-source = "git+https://github.com/adlrocha/ref-fvm#d632a0f5333ab895f0de78c0d31bc9a31dad59e8"
+source = "git+https://github.com/adlrocha/ref-fvm#6c56e1747068c0931e23007c9b4cc94b82629220"
 dependencies = [
  "anyhow",
  "bimap",
@@ -2655,9 +2657,9 @@ dependencies = [
 
 [[package]]
 name = "keccak"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67c21572b4949434e4fc1e1978b99c5f77064153c59d998bf13ecd96fb5ecba7"
+checksum = "f9b7d56ba4a8344d6be9729995e6b06f928af29998cdf79fe390cbf6b1fee838"
 
 [[package]]
 name = "kernel32-sys"
@@ -2964,6 +2966,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "num"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8536030f9fea7127f841b45bb6243b27255787fb4eb83958aa1ef9d2fdc0c36"
+dependencies = [
+ "num-bigint 0.2.6",
+ "num-complex",
+ "num-integer",
+ "num-iter",
+ "num-rational",
+ "num-traits",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2986,6 +3002,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-complex"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6b19411a9719e753aff12e5187b74d60d3dc449ec3f4dc21e3989c3f554bc95"
+dependencies = [
+ "autocfg",
+ "num-traits",
+]
+
+[[package]]
 name = "num-derive"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3003,6 +3029,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "225d3389fb3509a24c93f5c29eb6bde2586b98d9f016636dff58d7c6f7569cd9"
 dependencies = [
  "autocfg",
+ "num-traits",
+]
+
+[[package]]
+name = "num-iter"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d03e6c028c5dc5cac6e2dec0efda81fc887605bb3d884578bb6d6bf7514e252"
+dependencies = [
+ "autocfg",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
+name = "num-rational"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c000134b5dbf44adc5cb772486d335293351644b801551abe8f75c84cfa4aef"
+dependencies = [
+ "autocfg",
+ "num-bigint 0.2.6",
+ "num-integer",
  "num-traits",
 ]
 
@@ -3056,9 +3105,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.11.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b10983b38c53aebdf33f542c6275b0f58a238129d00c4ae0e6fb59738d783ca"
+checksum = "7709cef83f0c1f58f666e746a08b21e0085f7440fa6a29cc194d68aac97a4225"
 
 [[package]]
 name = "opaque-debug"
@@ -3084,9 +3133,9 @@ dependencies = [
 
 [[package]]
 name = "os_str_bytes"
-version = "6.0.1"
+version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "029d8d0b2f198229de29dca79676f2738ff952edf3fde542eb8bf94d8c21b435"
+checksum = "21326818e99cfe6ce1e524c2a805c189a99b5ae555a35d19f9a284b427d86afa"
 
 [[package]]
 name = "output_vt100"
@@ -4000,9 +4049,9 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "target-lexicon"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7fa7e55043acb85fca6b3c01485a2eeb6b69c5d21002e273c79e465f43b7ac1"
+checksum = "c02424087780c9b71cc96799eaeddff35af2bc513278cda5c99fc1f5d026d3c1"
 
 [[package]]
 name = "tempdir"
