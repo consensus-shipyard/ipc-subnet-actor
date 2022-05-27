@@ -1,8 +1,13 @@
 use std::collections::HashMap;
 use std::env;
+use std::str::FromStr;
 
 use cid::Cid;
+use fil_actor_hierarchical_sca::Checkpoint;
 use fil_actor_hierarchical_sca::FundParams;
+use fil_hierarchical_subnet_actor::state::get_checkpoint;
+use fil_hierarchical_subnet_actor::state::get_votes;
+use fil_hierarchical_subnet_actor::types::Votes;
 use fvm::executor::ApplyKind;
 use fvm::executor::Executor;
 use fvm::machine::Machine;
@@ -13,6 +18,9 @@ use fvm_ipld_encoding::RawBytes;
 use fvm_shared::address::Address;
 use fvm_shared::bigint::bigint_ser::BigIntDe;
 use fvm_shared::bigint::BigInt;
+use fvm_shared::clock::ChainEpoch;
+use fvm_shared::crypto::signature::Signature;
+use fvm_shared::crypto::signature::SECP_SIG_LEN;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::error::ExitCode;
 use fvm_shared::message::Message;
@@ -20,6 +28,7 @@ use fvm_shared::state::StateTreeVersion;
 use fvm_shared::version::NetworkVersion;
 use fvm_shared::ActorID;
 use fvm_shared::MethodNum;
+use libsecp256k1::{sign, Message as SecpMsg};
 use num_traits::Zero;
 
 use fil_hierarchical_subnet_actor::blockstore::make_map_with_root;
@@ -28,36 +37,72 @@ use fil_hierarchical_subnet_actor::types::{ConstructParams, Status};
 
 pub const TEST_INIT_ACTOR_ADDR: ActorID = 339;
 pub const TEST_ACTOR_ADDR: ActorID = 9999;
-pub const NUM_ACC: usize = 3;
+pub const NUM_ACC: usize = 5;
 
 pub struct Harness {
     pub tester: Tester<MemoryBlockstore>,
     pub actor_address: Address,
-    pub senders: Senders,
+    pub senders: SendersMap,
     exp_msg_index: usize,
 }
 
-pub struct Senders {
-    pub m: HashMap<Address, u64>,
+pub struct Sender {
+    pub acc: Account,
+    pub seq: u64,
+}
+impl Sender {
+    pub fn sign_checkpoint(&self, ch: &mut Checkpoint) {
+        let hash: [u8; 32] = blake2b_simd::Params::new()
+            .hash_length(32)
+            .to_state()
+            .update(&ch.cid().to_bytes())
+            .finalize()
+            .as_bytes()
+            .try_into()
+            .expect("fixed array size");
+
+        // Generate signature
+        let priv_key = self.acc.2;
+        let (sig, recovery_id) = sign(&SecpMsg::parse(&hash), &priv_key);
+        let mut signature = [0; SECP_SIG_LEN];
+        signature[..64].copy_from_slice(&sig.serialize());
+        signature[64] = recovery_id.serialize();
+
+        ch.set_signature(
+            RawBytes::serialize::<Signature>(Signature::new_secp256k1(signature.to_vec()).into())
+                .unwrap()
+                .to_vec(),
+        );
+    }
 }
 
-impl Senders {
+pub struct SendersMap {
+    pub m: HashMap<Address, Sender>,
+}
+
+impl SendersMap {
     pub fn new_from_accs(senders_vec: Vec<Account>) -> Self {
-        let mut out = Senders { m: HashMap::new() };
+        let mut out = SendersMap { m: HashMap::new() };
         for s in &senders_vec {
-            out.m.insert(Address::new_id(s.0), 0);
+            out.m.insert(
+                Address::new_id(s.0),
+                Sender {
+                    acc: s.clone(),
+                    seq: 0,
+                },
+            );
         }
         out
     }
 
     pub fn add_sequence(&mut self, addr: &Address) {
         if let Some(k) = self.m.get_mut(addr) {
-            *k += 1;
+            k.seq += 1;
         }
     }
 
     pub fn get_sequence(&self, addr: &Address) -> u64 {
-        *self.m.get(addr).unwrap()
+        self.m.get(addr).unwrap().seq
     }
 
     pub fn get_sender_by_index(&self, index: usize) -> Option<Address> {
@@ -72,6 +117,10 @@ impl Senders {
             i += 1;
         }
         None
+    }
+
+    pub fn get_sender_by_addr(&self, addr: &Address) -> &Sender {
+        self.m.get(&addr).unwrap()
     }
 }
 
@@ -100,7 +149,7 @@ impl Harness {
 
         // initialize a list of senders
         let senders_vec: [Account; NUM_ACC] = tester.create_accounts().unwrap();
-        let senders = Senders::new_from_accs(senders_vec.into());
+        let senders = SendersMap::new_from_accs(senders_vec.into());
 
         // Set actor
         let actor_address = Address::new_id(TEST_ACTOR_ADDR);
@@ -278,11 +327,76 @@ impl Harness {
         assert_eq!(ExitCode::from(res.msg_receipt.exit_code.value()), code);
     }
 
+    pub fn submit_checkpoint<'m>(
+        &mut self,
+        sender: Address,
+        epoch: ChainEpoch,
+        prev_cid: &Cid,
+        code: ExitCode,
+    ) -> Checkpoint {
+        let sub_id = fvm_shared_builtin::address::SubnetID::new(
+            &fvm_shared_builtin::address::SubnetID::from_str("/root").unwrap(),
+            fvm_shared_builtin::address::Address::new_id(TEST_ACTOR_ADDR),
+        );
+        let mut ch = Checkpoint::new(sub_id, epoch);
+        ch.data.prev_check = prev_cid.clone();
+
+        // sender signs checkpoint
+        self.senders
+            .get_sender_by_addr(&sender)
+            .sign_checkpoint(&mut ch);
+
+        let message = Message {
+            from: sender,
+            to: self.actor_address,
+            gas_limit: 1000000000,
+            method_num: 5,
+            params: RawBytes::serialize(ch.clone()).unwrap(),
+            value: TokenAmount::zero(),
+            sequence: self.senders.get_sequence(&sender),
+            ..Message::default()
+        };
+        self.senders.add_sequence(&sender);
+
+        let res = self
+            .tester
+            .executor
+            .as_mut()
+            .unwrap()
+            .execute_message(message, ApplyKind::Explicit, 100)
+            .unwrap();
+
+        match res.failure_info {
+            Some(err) => println!("Failure traces: {}", err),
+            None => {}
+        };
+
+        assert_eq!(ExitCode::from(res.msg_receipt.exit_code.value()), code);
+        ch
+    }
+
     pub fn verify_stake(&self, st: &State, addr: Address, expect: TokenAmount) {
         let store = self.store();
         let bt = make_map_with_root::<_, BigIntDe>(&st.stake, store).unwrap();
         let stake = get_stake(&bt, &addr).unwrap();
         assert_eq!(stake, expect);
+    }
+
+    pub fn verify_check_votes(&self, st: &State, cid: &Cid, expect: usize) {
+        let store = self.store();
+        let m = make_map_with_root::<_, Votes>(&st.window_checks, store).unwrap();
+        let votes = get_votes(&m, cid).unwrap();
+        if expect == 0 {
+            assert_eq!(votes, None);
+            return;
+        }
+        assert_eq!(votes.unwrap().validators.len(), expect);
+    }
+
+    pub fn verify_checkpoint(&self, st: &State, epoch: &ChainEpoch, expect: Option<&Checkpoint>) {
+        let store = self.store();
+        let checkpoints = make_map_with_root::<_, Checkpoint>(&st.checkpoints, store).unwrap();
+        assert_eq!(get_checkpoint(&checkpoints, epoch).unwrap(), expect);
     }
 
     pub fn expect_send(

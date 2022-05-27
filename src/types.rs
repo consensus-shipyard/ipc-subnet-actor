@@ -12,6 +12,7 @@ use fvm_shared::econ::TokenAmount;
 // setting it to 1_u64 for now for convenience.
 // This will change once we figure out the econ model.
 pub const LEAVING_COEFF: u64 = 1;
+pub const TESTING_ID: u64 = 339;
 
 #[derive(Clone, Debug, Serialize_tuple, Deserialize_tuple, PartialEq)]
 pub struct Validator {

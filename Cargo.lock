@@ -1483,7 +1483,7 @@ dependencies = [
 [[package]]
 name = "fil_actor_hierarchical_sca"
 version = "8.0.0-alpha.1"
-source = "git+https://github.com/adlrocha/builtin-actors#fab1429ad63822dad4f2d927c17ea58bc17dff22"
+source = "git+https://github.com/adlrocha/builtin-actors#4e8ffa688dbd35dd6c098fda3fe81b2e1d08e58f"
 dependencies = [
  "anyhow",
  "cid",
@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "fil_actors_runtime"
 version = "8.0.0-alpha.1"
-source = "git+https://github.com/adlrocha/builtin-actors#fab1429ad63822dad4f2d927c17ea58bc17dff22"
+source = "git+https://github.com/adlrocha/builtin-actors#4e8ffa688dbd35dd6c098fda3fe81b2e1d08e58f"
 dependencies = [
  "anyhow",
  "base64",
@@ -1777,6 +1777,7 @@ name = "fil_hierarchical_subnet_actor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake2b_simd 1.0.0",
  "cid",
  "fil_actor_hierarchical_sca",
  "fvm",
@@ -1785,6 +1786,7 @@ dependencies = [
  "fvm_ipld_encoding 0.2.1 (git+https://github.com/adlrocha/ref-fvm)",
  "fvm_ipld_hamt 0.5.1 (git+https://github.com/adlrocha/ref-fvm)",
  "fvm_sdk 1.0.0-rc.1 (git+https://github.com/adlrocha/ref-fvm)",
+ "fvm_shared 0.7.0",
  "fvm_shared 0.7.0 (git+https://github.com/adlrocha/ref-fvm)",
  "lazy_static",
  "libsecp256k1",

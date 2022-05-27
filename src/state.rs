@@ -175,9 +175,8 @@ impl State {
                 .map_err(|e| anyhow!(format!("error getting stake from Hamt: {:?}", e)))?;
             sum += stake;
         }
-        let fsum = Ratio::from_integer(sum);
         let ftotal = Ratio::from_integer(self.total_stake.clone());
-        Ok(fsum / ftotal >= *VOTING_THRESHOLD)
+        Ok(Ratio::from_integer(sum) / ftotal >= *VOTING_THRESHOLD)
     }
 
     pub fn mutate_state(&mut self) {
@@ -233,6 +232,8 @@ impl State {
             ));
         }
         // check the source is correct
+        // FIXME: Using to_string is a workaraound because builtin_actors and this package
+        // use different versions of fvm_shared
         if ch.source().to_string()
             != SubnetID::new(&self.parent_id, Address::new_id(sdk::message::receiver())).to_string()
         {
@@ -252,11 +253,16 @@ impl State {
         // In this case we are verifying a signature of the validator over
         // the cid of the checkpoint.
         let caller = Address::new_id(sdk::message::caller());
-        if !sdk::crypto::verify_signature(
-            &RawBytes::deserialize(&ch.signature().clone().into())?,
-            &self.resolve_secp_bls(&caller)?,
-            &ch.cid().to_bytes(),
-        )? {
+        // FIXME: We are skipping the signature verification for
+        // testing. This is not good.
+        let pkey = self.resolve_secp_bls(&caller)?;
+        if !self.testing
+            && !sdk::crypto::verify_signature(
+                &RawBytes::deserialize(&ch.signature().clone().into())?,
+                &pkey,
+                &ch.cid().to_bytes(),
+            )?
+        {
             return Err(anyhow!("signature verification failed"));
         }
 
@@ -280,6 +286,13 @@ impl State {
             RawBytes::default(),
             TokenAmount::zero(),
         )?;
+        // if testing return a testing address without
+        // processing the response.
+        // FIXME: We should include some "expectedReturn" thing
+        // to dynamically select this.
+        if self.testing {
+            return Ok(Address::new_id(TESTING_ID));
+        }
         let pub_key: Address = deserialize(&ret, "address response")?;
         Ok(pub_key)
     }
@@ -409,7 +422,7 @@ pub fn get_stake<'m, BS: fvm_ipld_blockstore::Blockstore>(
     }
 }
 
-fn get_checkpoint<'m, BS: fvm_ipld_blockstore::Blockstore>(
+pub fn get_checkpoint<'m, BS: fvm_ipld_blockstore::Blockstore>(
     checkpoints: &'m Map<BS, Checkpoint>,
     epoch: &ChainEpoch,
 ) -> anyhow::Result<Option<&'m Checkpoint>> {

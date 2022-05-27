@@ -1,7 +1,6 @@
-mod harness;
 use std::str::FromStr;
 
-use fil_actor_hierarchical_sca::{FundParams, Method, MIN_COLLATERAL_AMOUNT};
+use cid::Cid;
 use fvm_ipld_encoding::RawBytes;
 use fvm_shared::address::{Address, SubnetID};
 use fvm_shared::econ::TokenAmount;
@@ -9,8 +8,11 @@ use fvm_shared::error::ExitCode;
 use fvm_shared::METHOD_SEND;
 
 use crate::harness::Harness;
+use fil_actor_hierarchical_sca::{FundParams, Method, MIN_COLLATERAL_AMOUNT};
 use fil_hierarchical_subnet_actor::ext;
 use fil_hierarchical_subnet_actor::types::{ConsensusType, ConstructParams, Status};
+
+mod harness;
 
 #[test]
 fn test_constructor() {
@@ -224,6 +226,134 @@ fn test_leave_and_kill() {
         RawBytes::default(),
         0.into(),
     );
+}
+
+#[test]
+fn test_submit_checkpoint() {
+    let mut h = Harness::new();
+    h.constructor(std_params());
+
+    let mut i = 0;
+    // add three validators
+    let senders: Vec<Address> = h.senders.m.keys().cloned().collect();
+    for addr in senders {
+        let value = TokenAmount::from(MIN_COLLATERAL_AMOUNT);
+        h.join(addr, value.clone());
+        let st = h.get_state();
+        let mut method = Method::AddStake as u64;
+        if i == 0 {
+            method = Method::Register as u64;
+        }
+        h.expect_send(
+            &st,
+            &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+            method,
+            RawBytes::default(),
+            TokenAmount::from(MIN_COLLATERAL_AMOUNT),
+        );
+        i += 1;
+        if i == 3 {
+            break;
+        }
+    }
+    // verify that we have an active subnet with 3 validators.
+    let st = h.get_state();
+    assert_eq!(st.validator_set.len(), 3);
+    assert_eq!(st.status, Status::Active);
+
+    // Send first checkpoint
+    let epoch = 10;
+    let sender = h.senders.get_sender_by_index(0).unwrap();
+    let ch = h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::OK);
+    let st = h.get_state();
+    h.verify_check_votes(&st, &ch.cid(), 1);
+    h.expect_send(
+        &st,
+        &sender,
+        ext::account::PUBKEY_ADDRESS_METHOD,
+        RawBytes::default(),
+        0.into(),
+    );
+    // no checkpoint committed yet.
+    h.verify_checkpoint(&st, &epoch, None);
+    // same miner shouldn't be allowed to submit checkpoint again
+    h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::USR_ILLEGAL_STATE);
+
+    let sender = h.senders.get_sender_by_index(1).unwrap();
+    let ch = h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::OK);
+    let st = h.get_state();
+    h.expect_send(
+        &st,
+        &sender,
+        ext::account::PUBKEY_ADDRESS_METHOD,
+        RawBytes::default(),
+        0.into(),
+    );
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        Method::CommitChildCheckpoint as u64,
+        RawBytes::serialize(ch.clone()).unwrap(),
+        0.into(),
+    );
+    // 2/3 votes. Checkpoint committed
+    h.verify_checkpoint(&st, &epoch, Some(&ch));
+    // votes should have been cleaned
+    h.verify_check_votes(&st, &ch.cid(), 0);
+
+    // Trying to submit an already committed checkpoint should fail
+    let sender = h.senders.get_sender_by_index(2).unwrap();
+    h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::USR_ILLEGAL_STATE);
+
+    // If the epoch is wrong in the next checkpoint, it should be rejected.
+    let prev_cid = ch.cid();
+    let sender = h.senders.get_sender_by_index(0).unwrap();
+    h.submit_checkpoint(sender, 11, &prev_cid, ExitCode::USR_ILLEGAL_STATE);
+
+    // Only validators should be entitled to submit checkpoints.
+    let epoch = 20;
+    let sender = h.senders.get_sender_by_index(3).unwrap();
+    h.submit_checkpoint(sender, epoch, &prev_cid, ExitCode::USR_ILLEGAL_STATE);
+
+    let sender = h.senders.get_sender_by_index(0).unwrap();
+    // Using wrong prev_cid should fail
+    h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::USR_ILLEGAL_STATE);
+
+    // Submit checkpoint for subsequent epoch
+    let ch = h.submit_checkpoint(sender, epoch, &prev_cid, ExitCode::OK);
+    let st = h.get_state();
+    h.verify_check_votes(&st, &ch.cid(), 1);
+    h.expect_send(
+        &st,
+        &sender,
+        ext::account::PUBKEY_ADDRESS_METHOD,
+        RawBytes::default(),
+        0.into(),
+    );
+    // no checkpoint committed yet.
+    h.verify_checkpoint(&st, &epoch, None);
+
+    let sender = h.senders.get_sender_by_index(1).unwrap();
+    let ch = h.submit_checkpoint(sender, epoch, &prev_cid, ExitCode::OK);
+    let st = h.get_state();
+    h.expect_send(
+        &st,
+        &sender,
+        ext::account::PUBKEY_ADDRESS_METHOD,
+        RawBytes::default(),
+        0.into(),
+    );
+    h.expect_send(
+        &st,
+        &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
+        Method::CommitChildCheckpoint as u64,
+        RawBytes::serialize(ch.clone()).unwrap(),
+        0.into(),
+    );
+    // 2/3 votes. Checkpoint committed
+    h.verify_checkpoint(&st, &epoch, Some(&ch));
+    // votes should have been cleaned
+    h.verify_check_votes(&st, &ch.cid(), 0);
 }
 
 fn std_params() -> ConstructParams {

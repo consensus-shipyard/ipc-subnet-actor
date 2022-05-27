@@ -25,6 +25,8 @@ use crate::state::{get_stake, State};
 use crate::types::*;
 use crate::utils::*;
 
+pub const TEST_ADDR_ID: ActorID = 339;
+
 /// The actor's WASM entrypoint. It takes the ID of the parameters block,
 /// and returns the ID of the return value block, or NO_DATA_BLOCK_ID if no
 /// return value.
@@ -80,9 +82,9 @@ impl SubnetActor for Actor {
         // Should add SDK sugar to perform ACL checks more succinctly.
         // i.e. the equivalent of the validate_* builtin-actors runtime methods.
         // https://github.com/filecoin-project/builtin-actors/blob/master/actors/runtime/src/runtime/fvm.rs#L110-L146
-        const TEST: ActorID = 339;
         let is_test = State::is_test();
-        if sdk::message::caller() != INIT_ACTOR_ADDR && (sdk::message::caller() != TEST && is_test)
+        if sdk::message::caller() != INIT_ACTOR_ADDR
+            && (sdk::message::caller() != TEST_ADDR_ID && is_test)
         {
             abort!(USR_FORBIDDEN, "constructor invoked by non-init actor");
         }
@@ -230,7 +232,8 @@ impl SubnetActor for Actor {
                 validators: Vec::new(),
             },
         };
-        if !st.validator_set.iter().any(|x| x.addr == caller) {
+
+        if votes.validators.iter().any(|x| x == &caller) {
             return Err(anyhow!("miner has already voted the checkpoint"));
         }
 
