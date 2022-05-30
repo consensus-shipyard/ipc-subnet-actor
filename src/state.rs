@@ -95,7 +95,8 @@ impl State {
         }
     }
 
-    pub fn add_stake(&mut self, addr: &Address, amount: &TokenAmount) -> anyhow::Result<()> {
+    /// Adds stake from a validator
+    pub(crate) fn add_stake(&mut self, addr: &Address, amount: &TokenAmount) -> anyhow::Result<()> {
         // update miner stake
         let mut bt = make_map_with_root::<_, BigIntDe>(&self.stake, &Blockstore)?;
         let mut stake = get_stake(&bt, addr)
@@ -122,7 +123,7 @@ impl State {
         Ok(())
     }
 
-    pub fn rm_stake(&mut self, addr: &Address, amount: &TokenAmount) -> anyhow::Result<()> {
+    pub(crate) fn rm_stake(&mut self, addr: &Address, amount: &TokenAmount) -> anyhow::Result<()> {
         // update miner stake
         let mut bt = make_map_with_root::<_, BigIntDe>(&self.stake, &Blockstore)?;
         let stake = get_stake(&bt, addr)
@@ -144,7 +145,9 @@ impl State {
         Ok(())
     }
 
-    pub fn send(
+    /// Send new message from actor. It includes some custom code that is run
+    /// for test cases.
+    pub(crate) fn send(
         &mut self,
         to: &Address,
         method: MethodNum,
@@ -167,7 +170,7 @@ impl State {
         Ok(RawBytes::default())
     }
 
-    pub fn has_majority_vote(&self, votes: &Votes) -> anyhow::Result<bool> {
+    pub(crate) fn has_majority_vote(&self, votes: &Votes) -> anyhow::Result<bool> {
         let bt = make_map_with_root::<_, BigIntDe>(&self.stake, &Blockstore)?;
         let mut sum = TokenAmount::from(0);
         for v in &votes.validators {
@@ -179,7 +182,7 @@ impl State {
         Ok(Ratio::from_integer(sum) / ftotal >= *VOTING_THRESHOLD)
     }
 
-    pub fn mutate_state(&mut self) {
+    pub(crate) fn mutate_state(&mut self) {
         match self.status {
             Status::Instantiated => {
                 if self.total_stake >= TokenAmount::from(MIN_COLLATERAL_AMOUNT) {
@@ -209,7 +212,7 @@ impl State {
         }
     }
 
-    pub fn verify_checkpoint(&mut self, ch: &Checkpoint) -> anyhow::Result<()> {
+    pub(crate) fn verify_checkpoint(&mut self, ch: &Checkpoint) -> anyhow::Result<()> {
         // check that subnet is active
         if self.status != Status::Active {
             return Err(anyhow!(

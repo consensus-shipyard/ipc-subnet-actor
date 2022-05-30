@@ -23,7 +23,7 @@ num = "0.2.1"
 lazy_static = "1.4.0"
 
 [dev-dependencies]
-# FIXME: Pointing to a fork of ref-fvm. This needs to change
+#  FIXME: Pointing to a fork of ref-fvm. This needs to change
 # once features are fully implemented.
 fvm = { git = "https://github.com/adlrocha/ref-fvm" }
 fvm_integration_tests = { git = "https://github.com/adlrocha/ref-fvm" }

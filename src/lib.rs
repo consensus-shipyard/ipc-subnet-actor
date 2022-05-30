@@ -60,11 +60,20 @@ pub fn invoke(params: u32) -> u32 {
     }
 }
 
+/// SubnetActor trait. Custom subnet actors need to implement this trait
+/// in order to be used as part of hierarchical consensus.
+///
+/// Subnet actors are responsible for the governing policies of HC subnets.
 pub trait SubnetActor {
+    /// Deploys subnet actor with the corresponding parameters.
     fn constructor(params: ConstructParams) -> anyhow::Result<Option<RawBytes>>;
+    /// Logic for new peers to join a subnet.
     fn join() -> anyhow::Result<Option<RawBytes>>;
+    /// Called by peers to leave a subnet.
     fn leave() -> anyhow::Result<Option<RawBytes>>;
+    /// Sends a kill signal for the subnet to the SCA.
     fn kill() -> anyhow::Result<Option<RawBytes>>;
+    /// Submits a new checkpoint for the subnet.
     fn submit_checkpoint(ch: Checkpoint) -> anyhow::Result<Option<RawBytes>>;
 }
 
@@ -94,6 +103,9 @@ impl SubnetActor for Actor {
         Ok(None)
     }
 
+    /// Called by peers looking to join a subnet.
+    ///
+    /// It implements the basic logic to onboard new peers to the subnet.
     fn join() -> anyhow::Result<Option<RawBytes>> {
         let mut st = State::load();
         let caller = Address::new_id(sdk::message::caller());
@@ -135,6 +147,7 @@ impl SubnetActor for Actor {
         Ok(None)
     }
 
+    /// Called by peers looking to leave a subnet.
     fn leave() -> anyhow::Result<Option<RawBytes>> {
         let mut st = State::load();
         let caller = Address::new_id(sdk::message::caller());
@@ -206,6 +219,11 @@ impl SubnetActor for Actor {
         Ok(None)
     }
 
+    /// SubmitCheckpoint accepts signed checkpoint votes for miners.
+    ///
+    /// This functions verifies that the checkpoint is valid before
+    /// propagating it for commitment to the SCA. It expects at least
+    /// votes from 2/3 of miners with collateral.
     fn submit_checkpoint(checkpoint: Checkpoint) -> anyhow::Result<Option<RawBytes>> {
         let mut st = State::load();
         let caller = Address::new_id(sdk::message::caller());
