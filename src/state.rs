@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use cid::multihash::Code;
 use cid::Cid;
 use fvm_ipld_encoding::tuple::{Deserialize_tuple, Serialize_tuple};
-use fvm_ipld_encoding::{to_vec, CborStore, RawBytes, DAG_CBOR};
+use fvm_ipld_encoding::{serde_bytes, to_vec, CborStore, RawBytes, DAG_CBOR};
 use fvm_ipld_hamt::{BytesKey, Error as HamtError, Hamt};
 use fvm_sdk as sdk;
 use fvm_shared::address::{Address, SubnetID};
@@ -39,6 +39,7 @@ pub struct State {
     pub total_stake: TokenAmount,
     pub stake: Cid, // BalanceTable of stake (HAMT[address]TokenAmount)
     pub status: Status,
+    #[serde(with = "serde_bytes")]
     pub genesis: Vec<u8>,
     pub check_period: ChainEpoch,
     pub checkpoints: Cid,   // HAMT[cid]Checkpoint
