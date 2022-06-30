@@ -10,7 +10,7 @@ multihash = { version = "0.16.2", default-features = false }
 # once features are fully implemented.
 fvm_sdk = { git = "https://github.com/adlrocha/ref-fvm" }
 fvm_shared = { git = "https://github.com/adlrocha/ref-fvm" }
-fvm_shared_builtin = { package= "fvm_shared", version = "0.7.0" }
+fvm_shared_builtin = { package= "fvm_shared", version = "0.8.0" }
 fvm_ipld_blockstore = { git = "https://github.com/adlrocha/ref-fvm" }
 fvm_ipld_hamt = { git = "https://github.com/adlrocha/ref-fvm" }
 fvm_ipld_encoding = { git = "https://github.com/adlrocha/ref-fvm" }
