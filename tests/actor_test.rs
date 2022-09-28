@@ -362,6 +362,7 @@ fn std_params() -> ConstructParams {
         name: String::from("test"),
         consensus: ConsensusType::PoW,
         min_validator_stake: TokenAmount::from(10_u64.pow(18)),
+        min_validators: 1,
         check_period: 10,
         genesis: Vec::new(),
     }

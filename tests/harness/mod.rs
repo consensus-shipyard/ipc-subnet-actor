@@ -225,6 +225,7 @@ impl Harness {
         assert_eq!(sst.consensus, params.consensus);
         assert_eq!(sst.check_period, params.check_period);
         assert_eq!(sst.min_validator_stake, params.min_validator_stake);
+        assert_eq!(sst.min_validators, params.min_validators);
         assert_eq!(sst.genesis, params.genesis);
         assert_eq!(sst.status, Status::Instantiated);
         assert_eq!(sst.total_stake, TokenAmount::zero());
