@@ -33,7 +33,7 @@ use num_traits::Zero;
 
 use fil_hierarchical_subnet_actor::blockstore::make_map_with_root;
 use fil_hierarchical_subnet_actor::state::{get_stake, State};
-use fil_hierarchical_subnet_actor::types::{ConstructParams, Status};
+use fil_hierarchical_subnet_actor::types::{ConstructParams, JoinParams, Status};
 
 pub const TEST_INIT_ACTOR_ADDR: ActorID = 339;
 pub const TEST_ACTOR_ADDR: ActorID = 9999;
@@ -236,13 +236,13 @@ impl Harness {
         verify_empty_map(store, sst.window_checks);
     }
 
-    pub fn join(&mut self, sender: Address, value: TokenAmount) {
+    pub fn join(&mut self, sender: Address, value: TokenAmount, params: JoinParams) {
         let message = Message {
             from: sender,
             to: self.actor_address,
             gas_limit: 1000000000,
             method_num: 2,
-            params: RawBytes::default(),
+            params: RawBytes::serialize(params.clone()).unwrap(),
             value,
             sequence: self.senders.get_sequence(&sender),
             ..Message::default()
