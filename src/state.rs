@@ -41,6 +41,7 @@ pub struct State {
     pub status: Status,
     #[serde(with = "serde_bytes")]
     pub genesis: Vec<u8>,
+    pub finality_threshold: ChainEpoch,
     pub check_period: ChainEpoch,
     pub checkpoints: Cid,   // HAMT[cid]Checkpoint
     pub window_checks: Cid, // HAMT[cid]Votes
@@ -82,6 +83,7 @@ impl State {
                 params.min_validator_stake
             },
             min_validators: params.min_validators,
+            finality_threshold: params.finality_threshold,
             check_period: if params.check_period < DEFAULT_CHECKPOINT_PERIOD {
                 DEFAULT_CHECKPOINT_PERIOD
             } else {
@@ -392,6 +394,7 @@ impl Default for State {
             consensus: ConsensusType::Delegated,
             min_validator_stake: TokenAmount::from(MIN_COLLATERAL_AMOUNT),
             total_stake: TokenAmount::zero(),
+            finality_threshold: 5,
             check_period: 10,
             genesis: Vec::new(),
             status: Status::Instantiated,
