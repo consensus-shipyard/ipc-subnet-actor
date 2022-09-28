@@ -10,7 +10,7 @@ use fvm_shared::METHOD_SEND;
 use crate::harness::Harness;
 use fil_actor_hierarchical_sca::{FundParams, Method, MIN_COLLATERAL_AMOUNT};
 use fil_hierarchical_subnet_actor::ext;
-use fil_hierarchical_subnet_actor::types::{ConsensusType, ConstructParams, Status};
+use fil_hierarchical_subnet_actor::types::{ConsensusType, ConstructParams, JoinParams, Status};
 
 mod harness;
 
@@ -28,7 +28,8 @@ fn test_join() {
     // join without enough to be activated
     let sender = h.senders.get_sender_by_index(0).unwrap();
     let value = TokenAmount::from(5_u64.pow(18));
-    h.join(sender, value.clone());
+    let params = std_join_params();
+    h.join(sender, value.clone(), params.clone());
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 0);
     assert_eq!(st.status, Status::Instantiated);
@@ -38,7 +39,7 @@ fn test_join() {
     // miner adds stake and activates it
     let sender = h.senders.get_sender_by_index(0).unwrap();
     let value = TokenAmount::from(MIN_COLLATERAL_AMOUNT - 5_u64.pow(18));
-    h.join(sender, value.clone());
+    h.join(sender, value.clone(), params.clone());
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 1);
     assert_eq!(st.status, Status::Active);
@@ -55,7 +56,7 @@ fn test_join() {
     // new miner joins
     let sender = h.senders.get_sender_by_index(1).unwrap();
     let value = TokenAmount::from(MIN_COLLATERAL_AMOUNT);
-    h.join(sender, value.clone());
+    h.join(sender, value.clone(), params.clone());
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 2);
     assert_eq!(st.status, Status::Active);
@@ -78,8 +79,9 @@ fn test_leave_and_kill() {
     // first miner joins the subnet
     let sender = h.senders.get_sender_by_index(0).unwrap();
     let value = TokenAmount::from(10_u64.pow(18));
+    let params = std_join_params();
     let mut total_stake = value.clone();
-    h.join(sender, value.clone());
+    h.join(sender, value.clone(), params.clone());
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 1);
     assert_eq!(st.status, Status::Active);
@@ -97,7 +99,7 @@ fn test_leave_and_kill() {
     let sender = h.senders.get_sender_by_index(1).unwrap();
     let value = TokenAmount::from(10_u64.pow(18));
     total_stake = total_stake + &value;
-    h.join(sender, value.clone());
+    h.join(sender, value.clone(), params.clone());
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 2);
     assert_eq!(st.status, Status::Active);
@@ -115,7 +117,7 @@ fn test_leave_and_kill() {
     let sender = h.senders.get_sender_by_index(2).unwrap();
     let value = TokenAmount::from(5u64.pow(18));
     total_stake = total_stake + &value;
-    h.join(sender, value.clone());
+    h.join(sender, value.clone(), params.clone());
     let st = h.get_state();
     assert_eq!(st.validator_set.len(), 2);
     assert_eq!(st.status, Status::Active);
@@ -238,7 +240,8 @@ fn test_submit_checkpoint() {
     let senders: Vec<Address> = h.senders.m.keys().cloned().collect();
     for addr in senders {
         let value = TokenAmount::from(MIN_COLLATERAL_AMOUNT);
-        h.join(addr, value.clone());
+        let params = std_join_params();
+        h.join(addr, value.clone(), params.clone());
         let st = h.get_state();
         let mut method = Method::AddStake as u64;
         if i == 0 {
@@ -366,5 +369,11 @@ fn std_params() -> ConstructParams {
         finality_threshold: 5,
         check_period: 10,
         genesis: Vec::new(),
+    }
+}
+
+fn std_join_params() -> JoinParams {
+    JoinParams {
+        validator_net_addr: String::from(":1234"),
     }
 }

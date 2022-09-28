@@ -101,7 +101,12 @@ impl State {
     }
 
     /// Adds stake from a validator
-    pub(crate) fn add_stake(&mut self, addr: &Address, amount: &TokenAmount) -> anyhow::Result<()> {
+    pub(crate) fn add_stake(
+        &mut self,
+        addr: &Address,
+        net_addr: &str,
+        amount: &TokenAmount,
+    ) -> anyhow::Result<()> {
         // update miner stake
         let mut bt = make_map_with_root::<_, BigIntDe>(&self.stake, &Blockstore)?;
         let mut stake = get_stake(&bt, addr)
@@ -120,8 +125,7 @@ impl State {
             self.validator_set.push(Validator {
                 subnet: SubnetID::new(&self.parent_id, Address::new_id(sdk::message::receiver())),
                 addr: addr.clone(),
-                // FIXME: Receive address in params
-                net_addr: String::new(),
+                net_addr: String::from(net_addr),
             });
         }
 

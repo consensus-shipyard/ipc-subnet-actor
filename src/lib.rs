@@ -41,7 +41,7 @@ pub fn invoke(params: u32) -> u32 {
     // Conduct method dispatch. Handle input parameters and return data.
     let ret: anyhow::Result<Option<RawBytes>> = match sdk::message::method_number() {
         1 => Actor::constructor(deserialize_params(&params).unwrap()),
-        2 => Actor::join(),
+        2 => Actor::join(deserialize_params(&params).unwrap()),
         3 => Actor::leave(),
         4 => Actor::kill(),
         5 => Actor::submit_checkpoint(deserialize_params(&params).unwrap()),
@@ -68,7 +68,7 @@ pub trait SubnetActor {
     /// Deploys subnet actor with the corresponding parameters.
     fn constructor(params: ConstructParams) -> anyhow::Result<Option<RawBytes>>;
     /// Logic for new peers to join a subnet.
-    fn join() -> anyhow::Result<Option<RawBytes>>;
+    fn join(params: JoinParams) -> anyhow::Result<Option<RawBytes>>;
     /// Called by peers to leave a subnet.
     fn leave() -> anyhow::Result<Option<RawBytes>>;
     /// Sends a kill signal for the subnet to the SCA.
@@ -106,7 +106,7 @@ impl SubnetActor for Actor {
     /// Called by peers looking to join a subnet.
     ///
     /// It implements the basic logic to onboard new peers to the subnet.
-    fn join() -> anyhow::Result<Option<RawBytes>> {
+    fn join(params: JoinParams) -> anyhow::Result<Option<RawBytes>> {
         let mut st = State::load();
         let caller = Address::new_id(sdk::message::caller());
         // check type of caller
@@ -123,7 +123,7 @@ impl SubnetActor for Actor {
             );
         }
         // increase collateral
-        st.add_stake(&caller, &amount)?;
+        st.add_stake(&caller, &params.validator_net_addr, &amount)?;
         // if we have enough collateral, register in SCA
         if st.status == Status::Instantiated {
             if sdk::sself::current_balance() >= TokenAmount::from(MIN_COLLATERAL_AMOUNT) {

@@ -66,3 +66,9 @@ pub struct ConstructParams {
     pub genesis: Vec<u8>,
 }
 impl Cbor for ConstructParams {}
+
+#[derive(Clone, Debug, Serialize_tuple, Deserialize_tuple, PartialEq)]
+pub struct JoinParams {
+    pub validator_net_addr: String,
+}
+impl Cbor for JoinParams {}
