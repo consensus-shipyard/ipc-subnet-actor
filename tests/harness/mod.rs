@@ -223,6 +223,7 @@ impl Harness {
         assert_eq!(sst.name, params.name);
         assert_eq!(sst.parent_id, params.parent);
         assert_eq!(sst.consensus, params.consensus);
+        assert_eq!(sst.finality_threshold, params.finality_threshold);
         assert_eq!(sst.check_period, params.check_period);
         assert_eq!(sst.min_validator_stake, params.min_validator_stake);
         assert_eq!(sst.min_validators, params.min_validators);
