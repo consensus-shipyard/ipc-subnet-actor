@@ -45,6 +45,7 @@ pub struct State {
     pub checkpoints: Cid,   // HAMT[cid]Checkpoint
     pub window_checks: Cid, // HAMT[cid]Votes
     pub validator_set: Vec<Validator>,
+    pub min_validators: u64,
     // testing flag notifying that we are testing
     pub testing: bool,
     pub expected_msg: Vec<ExpectedSend>,
@@ -80,6 +81,7 @@ impl State {
             } else {
                 params.min_validator_stake
             },
+            min_validators: params.min_validators,
             check_period: if params.check_period < DEFAULT_CHECKPOINT_PERIOD {
                 DEFAULT_CHECKPOINT_PERIOD
             } else {
@@ -397,6 +399,7 @@ impl Default for State {
             stake: Cid::default(),
             window_checks: Cid::default(),
             validator_set: Vec::new(),
+            min_validators: 0,
             testing: true,
             expected_msg: Vec::new(),
         }
