@@ -123,7 +123,6 @@ impl State {
             && (self.consensus != ConsensusType::Delegated || self.validator_set.len() < 1)
         {
             self.validator_set.push(Validator {
-                subnet: SubnetID::new(&self.parent_id, Address::new_id(sdk::message::receiver())),
                 addr: addr.clone(),
                 net_addr: String::from(net_addr),
             });
