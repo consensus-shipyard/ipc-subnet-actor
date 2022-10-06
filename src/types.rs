@@ -16,7 +16,6 @@ pub const TESTING_ID: u64 = 339;
 
 #[derive(Clone, Debug, Serialize_tuple, Deserialize_tuple, PartialEq)]
 pub struct Validator {
-    pub subnet: SubnetID,
     pub addr: Address,
     pub net_addr: String,
 }
