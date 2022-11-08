@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 fil_actors_runtime = { git = "https://github.com/consensus-shipyard/fvm-utils", branch = "v3.0.0", features = ["fil-actor"] }
-ipc_gateway = { git = "https://github.com/consensus-shipyard/ipc-gateway.git", branch = "introduce_fil_actor_feature" }
+ipc_gateway = { git = "https://github.com/consensus-shipyard/ipc-gateway.git" }
 primitives = { git = "https://github.com/consensus-shipyard/fvm-utils", branch = "v3.0.0"}
 fvm_shared = { version = "3.0.0-alpha.5", default-features = false }
 fvm_ipld_hamt = "0.5.1"

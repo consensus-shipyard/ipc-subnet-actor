@@ -877,7 +877,7 @@ dependencies = [
 [[package]]
 name = "ipc_gateway"
 version = "9.0.0-alpha.1"
-source = "git+https://github.com/consensus-shipyard/ipc-gateway.git?branch=introduce_fil_actor_feature#bddcb09a079cc5497963c05a1eb401aa12aaaec9"
+source = "git+https://github.com/consensus-shipyard/ipc-gateway.git#c7e0ea5efb20ee46e56e0ba690921e9cd80b834f"
 dependencies = [
  "anyhow",
  "cid",
