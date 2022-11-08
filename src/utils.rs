@@ -1,30 +1,14 @@
-use anyhow::anyhow;
 use fvm_ipld_encoding::tuple::{Deserialize_tuple, Serialize_tuple};
 use fvm_ipld_encoding::RawBytes;
 use fvm_shared::address::Address;
-use fvm_shared::bigint::bigint_ser;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::MethodNum;
-use serde::de;
-
-/// A macro to abort concisely.
-/// This should be part of the SDK as it's very handy.
-#[macro_export]
-macro_rules! abort {
-    ($code:ident, $msg:literal $(, $ex:expr)*) => {
-        fvm_sdk::vm::abort(
-            fvm_shared::error::ExitCode::$code.value(),
-            Some(format!($msg, $($ex,)*).as_str()),
-        )
-    };
-}
 
 #[derive(Serialize_tuple, Deserialize_tuple, Clone, Debug)]
 pub struct ExpectedSend {
     pub to: Address,
     pub method: MethodNum,
     pub params: RawBytes,
-    #[serde(with = "bigint_ser")]
     pub value: TokenAmount,
 }
 
@@ -46,14 +30,27 @@ pub struct ExpectedSend {
 //     Ok(RawBytes::new(serialize_vec(value, desc)?))
 // }
 
-/// Deserialises CBOR-encoded bytes as a structure, returning a serialization error on failure.
-/// `desc` is a noun phrase for the object being deserialized, included in any error message.
-pub fn deserialize<O: de::DeserializeOwned>(v: &RawBytes, desc: &str) -> anyhow::Result<O> {
-    v.deserialize()
-        .map_err(|e| anyhow!(format!("failed to deserialize {}: {}", desc, e)))
+// /// Deserialises CBOR-encoded bytes as a structure, returning a serialization error on failure.
+// /// `desc` is a noun phrase for the object being deserialized, included in any error message.
+// pub fn deserialize<O: de::DeserializeOwned>(v: &RawBytes, desc: &str) -> anyhow::Result<O> {
+//     v.deserialize()
+//         .map_err(|e| anyhow!(format!("failed to deserialize {}: {}", desc, e)))
+// }
+
+pub(crate) struct CrossActorPayload {
+    pub to: Address,
+    pub method: MethodNum,
+    pub params: RawBytes,
+    pub value: TokenAmount,
 }
 
-/// Deserialises CBOR-encoded bytes as a method parameters object.
-pub fn deserialize_params<O: de::DeserializeOwned>(params: &RawBytes) -> anyhow::Result<O> {
-    deserialize(params, "method parameters")
+impl CrossActorPayload {
+    pub fn new(to: Address, method: MethodNum, params: RawBytes, value: TokenAmount) -> Self {
+        Self {
+            to,
+            method,
+            params,
+            value,
+        }
+    }
 }
