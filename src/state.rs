@@ -96,7 +96,7 @@ impl State {
     ) -> anyhow::Result<()> {
         // update miner stake
         self.stake.modify(store, |hamt| {
-            // TODO: Note that when trying to get stake, if it is not found in the
+            // Note that when trying to get stake, if it is not found in the
             // hamt, that means it's the first time adding stake and we just
             // give default stake amount 0.
             let key = BytesKey::from(addr.to_bytes());

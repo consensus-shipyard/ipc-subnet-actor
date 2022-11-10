@@ -111,7 +111,6 @@ impl SubnetActor for Actor {
                     e.downcast_default(ExitCode::USR_ILLEGAL_STATE, "failed to load subnet")
                 })?;
 
-            // TODO: cur_balance should be the updated total stake?
             let cur_balance = st.total_stake.clone();
 
             if st.status == Status::Instantiated {
