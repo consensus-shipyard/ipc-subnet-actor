@@ -9,10 +9,10 @@ mod test {
     use fvm_shared::econ::TokenAmount;
     use fvm_shared::error::ExitCode;
     use ipc_gateway::MIN_COLLATERAL_AMOUNT;
-    use num_traits::Zero;
     use ipc_subnet_actor::{
         Actor, ConsensusType, ConstructParams, JoinParams, Method, State, Status,
     };
+    use num_traits::Zero;
 
     // just a test address
     const IPC_GATEWAY_ADDR: u64 = 1024;
@@ -77,7 +77,7 @@ mod test {
             runtime.call::<Actor>(
                 Method::Join as u64,
                 &cbor::serialize(&params, "test").unwrap(),
-            )
+            ),
         );
     }
 
