@@ -1,3 +1,194 @@
+#[cfg(test)]
+mod test {
+    use cid::Cid;
+    use fil_actors_runtime::runtime::Runtime;
+    use fil_actors_runtime::test_utils::{expect_abort, MockRuntime};
+    use fil_actors_runtime::{cbor, INIT_ACTOR_ADDR};
+    use fvm_ipld_encoding::RawBytes;
+    use fvm_shared::address::Address;
+    use fvm_shared::econ::TokenAmount;
+    use fvm_shared::error::ExitCode;
+    use ipc_gateway::MIN_COLLATERAL_AMOUNT;
+    use num_traits::Zero;
+    use ipc_subnet_actor::{
+        Actor, ConsensusType, ConstructParams, JoinParams, Method, State, Status,
+    };
+
+    // just a test address
+    const IPC_GATEWAY_ADDR: u64 = 1024;
+    const NETWORK_NAME: &'static str = "test";
+
+    fn std_construct_param() -> ConstructParams {
+        ConstructParams {
+            parent: Default::default(),
+            name: NETWORK_NAME.to_string(),
+            ipc_gateway_addr: IPC_GATEWAY_ADDR,
+            consensus: ConsensusType::Delegated,
+            min_validator_stake: Default::default(),
+            min_validators: 0,
+            finality_threshold: 0,
+            check_period: 0,
+            genesis: vec![],
+        }
+    }
+
+    fn construct_runtime() -> MockRuntime {
+        let caller = *INIT_ACTOR_ADDR;
+        let receiver = Address::new_id(1);
+        let mut runtime = MockRuntime::new(caller, receiver);
+
+        let params = std_construct_param();
+
+        runtime.expect_validate_caller_addr(vec![caller]);
+
+        runtime
+            .call::<Actor>(
+                Method::Constructor as u64,
+                &cbor::serialize(&params, "test").unwrap(),
+            )
+            .unwrap();
+
+        runtime
+    }
+
+    #[test]
+    fn test_constructor() {
+        let runtime = construct_runtime();
+        assert_eq!(runtime.state.is_some(), true);
+
+        let state: State = runtime.get_state();
+        assert_eq!(state.name, NETWORK_NAME);
+        assert_eq!(state.ipc_gateway_addr, Address::new_id(IPC_GATEWAY_ADDR));
+        assert_eq!(state.total_stake, TokenAmount::zero());
+        assert_eq!(state.validator_set.is_empty(), true);
+    }
+
+    #[test]
+    fn test_join_fail_no_min_collateral() {
+        let mut runtime = construct_runtime();
+
+        let validator = Address::new_id(100);
+        let params = JoinParams {
+            validator_net_addr: validator.to_string(),
+        };
+
+        expect_abort(
+            ExitCode::USR_ILLEGAL_ARGUMENT,
+            runtime.call::<Actor>(
+                Method::Join as u64,
+                &cbor::serialize(&params, "test").unwrap(),
+            )
+        );
+    }
+
+    #[test]
+    fn test_join_works() {
+        let mut runtime = construct_runtime();
+
+        let caller = Address::new_id(10);
+        let validator = Address::new_id(100);
+        let start_token_value = 5_u64.pow(18);
+        let params = JoinParams {
+            validator_net_addr: validator.to_string(),
+        };
+
+        // Part 1. join without enough to be activated
+
+        // execution
+        let value = TokenAmount::from_atto(start_token_value);
+        runtime.set_value(value.clone());
+        runtime.set_caller(Cid::default(), caller.clone());
+        runtime
+            .call::<Actor>(
+                Method::Join as u64,
+                &cbor::serialize(&params, "test").unwrap(),
+            )
+            .unwrap();
+
+        // verify state.
+        // as the value is less than min collateral, state is initiated
+        let st: State = runtime.get_state();
+        assert_eq!(st.validator_set.len(), 0);
+        assert_eq!(st.status, Status::Instantiated);
+        assert_eq!(st.total_stake, value);
+        let stake = st.get_stake(runtime.store(), &caller).unwrap();
+        assert_eq!(stake.unwrap(), value);
+
+        // Part 2. miner adds stake and activates it
+        let value = TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT - start_token_value);
+        runtime.set_value(value.clone());
+        runtime.set_caller(Cid::default(), caller.clone());
+        runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
+        runtime.expect_send(
+            Address::new_id(IPC_GATEWAY_ADDR),
+            ipc_gateway::Method::Register as u64,
+            RawBytes::default(),
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT),
+            RawBytes::default(),
+            ExitCode::new(0),
+        );
+        runtime
+            .call::<Actor>(
+                Method::Join as u64,
+                &cbor::serialize(&params, "test").unwrap(),
+            )
+            .unwrap();
+
+        // verify state.
+        // as the value is less than min collateral, state is active
+        let st: State = runtime.get_state();
+        assert_eq!(st.validator_set.len(), 1);
+        assert_eq!(st.status, Status::Active);
+        assert_eq!(
+            st.total_stake,
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT)
+        );
+        let stake = st.get_stake(runtime.store(), &caller).unwrap();
+        assert_eq!(
+            stake.unwrap(),
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT)
+        );
+        runtime.verify();
+
+        // Part 3. miner joins already active subnet
+        let caller = Address::new_id(11);
+        let value = TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT);
+        runtime.set_value(value.clone());
+        runtime.set_caller(Cid::default(), caller.clone());
+        runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
+        runtime.expect_send(
+            Address::new_id(IPC_GATEWAY_ADDR),
+            ipc_gateway::Method::AddStake as u64,
+            RawBytes::default(),
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT),
+            RawBytes::default(),
+            ExitCode::new(0),
+        );
+        runtime
+            .call::<Actor>(
+                Method::Join as u64,
+                &cbor::serialize(&params, "test").unwrap(),
+            )
+            .unwrap();
+
+        // verify state.
+        // as the value is less than min collateral, state is active
+        let st: State = runtime.get_state();
+        assert_eq!(st.validator_set.len(), 1);
+        assert_eq!(st.status, Status::Active);
+        assert_eq!(
+            st.total_stake,
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT * 2)
+        );
+        let stake = st.get_stake(runtime.store(), &caller).unwrap();
+        assert_eq!(
+            stake.unwrap(),
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT)
+        );
+        runtime.verify();
+    }
+}
+
 // use fil_actors_runtime::test_utils::MockRuntime;
 // use fil_actors_runtime::{actor_error, cbor, INIT_ACTOR_ADDR};
 // use fvm_shared::address::Address;

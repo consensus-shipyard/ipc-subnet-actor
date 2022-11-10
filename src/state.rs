@@ -75,9 +75,8 @@ impl State {
         Ok(state)
     }
 
-    #[cfg(test)]
-    /// Get the stake of an address. Currently enabled only in tests
-    pub(crate) fn get_stake<BS: Blockstore>(
+    /// Get the stake of an address.
+    pub fn get_stake<BS: Blockstore>(
         &self,
         store: &BS,
         addr: &Address,
