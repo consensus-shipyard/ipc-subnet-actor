@@ -1,7 +1,6 @@
 pub mod ext;
 pub mod state;
 pub mod types;
-mod utils;
 
 use fil_actors_runtime::runtime::{ActorCode, Runtime};
 use fil_actors_runtime::{actor_error, cbor, ActorDowncast, ActorError, INIT_ACTOR_ADDR};
@@ -17,7 +16,6 @@ use num_traits::{FromPrimitive, Zero};
 
 use crate::state::State;
 use crate::types::*;
-use crate::utils::*;
 
 fil_actors_runtime::wasm_trampoline!(Actor);
 
@@ -36,9 +34,32 @@ pub enum Method {
 /// in order to be used as part of hierarchical consensus.
 ///
 /// Subnet actors are responsible for the governing policies of HC subnets.
+pub trait SubnetActor {
+    /// Deploys subnet actor with the corresponding parameters.
+    fn constructor<BS, RT>(rt: &mut RT, params: ConstructParams) -> Result<(), ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>;
+    /// Logic for new peers to join a subnet.
+    fn join<BS, RT>(rt: &mut RT, params: JoinParams) -> Result<Option<RawBytes>, ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>;
+    // /// Called by peers to leave a subnet.
+    // fn leave() -> anyhow::Result<Option<RawBytes>>;
+    // /// Sends a kill signal for the subnet to the SCA.
+    // fn kill() -> anyhow::Result<Option<RawBytes>>;
+    // /// Submits a new checkpoint for the subnet.
+    // fn submit_checkpoint(ch: Checkpoint) -> anyhow::Result<Option<RawBytes>>;
+}
+
+/// SubnetActor trait. Custom subnet actors need to implement this trait
+/// in order to be used as part of hierarchical consensus.
+///
+/// Subnet actors are responsible for the governing policies of HC subnets.
 pub struct Actor;
 
-impl Actor {
+impl SubnetActor for Actor {
     /// The constructor populates the initial state.
     ///
     /// Method num 1. This is part of the Filecoin calling convention.
@@ -90,11 +111,13 @@ impl Actor {
                     e.downcast_default(ExitCode::USR_ILLEGAL_STATE, "failed to load subnet")
                 })?;
 
-            let cur_balance = rt.current_balance();
+            // TODO: cur_balance should be the updated total stake?
+            let cur_balance = st.total_stake.clone();
+
             if st.status == Status::Instantiated {
                 if cur_balance >= TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT) {
                     msg = Some(CrossActorPayload::new(
-                        st.sca_actor_addr,
+                        st.ipc_gateway_addr,
                         ipc_gateway::Method::Register as u64,
                         RawBytes::default(),
                         st.total_stake.clone(),
@@ -102,7 +125,7 @@ impl Actor {
                 }
             } else {
                 msg = Some(CrossActorPayload::new(
-                    st.sca_actor_addr,
+                    st.ipc_gateway_addr,
                     ipc_gateway::Method::AddStake as u64,
                     RawBytes::default(),
                     amount,
@@ -117,6 +140,7 @@ impl Actor {
         if let Some(p) = msg {
             rt.send(p.to, p.method, p.params, p.value)?;
         }
+
         Ok(None)
     }
 
@@ -280,5 +304,192 @@ impl ActorCode for Actor {
             }
             None => Err(actor_error!(unhandled_message; "Invalid method")),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{Actor, ConsensusType, ConstructParams, JoinParams, Method, State, Status};
+    use cid::Cid;
+    use fil_actors_runtime::runtime::Runtime;
+    use fil_actors_runtime::test_utils::MockRuntime;
+    use fil_actors_runtime::{actor_error, cbor, INIT_ACTOR_ADDR};
+    use fvm_ipld_encoding::RawBytes;
+    use fvm_shared::address::Address;
+    use fvm_shared::econ::TokenAmount;
+    use fvm_shared::error::ExitCode;
+    use ipc_gateway::MIN_COLLATERAL_AMOUNT;
+
+    // just a test address
+    const IPC_GATEWAY_ADDR: u64 = 1024;
+
+    fn std_construct_param() -> ConstructParams {
+        ConstructParams {
+            parent: Default::default(),
+            name: "".to_string(),
+            ipc_gateway_addr: IPC_GATEWAY_ADDR,
+            consensus: ConsensusType::Delegated,
+            min_validator_stake: Default::default(),
+            min_validators: 0,
+            finality_threshold: 0,
+            check_period: 0,
+            genesis: vec![],
+        }
+    }
+
+    fn construct_runtime() -> MockRuntime {
+        let caller = *INIT_ACTOR_ADDR;
+        let receiver = Address::new_id(1);
+        let mut runtime = MockRuntime::new(caller, receiver);
+
+        let params = std_construct_param();
+
+        runtime.expect_validate_caller_addr(vec![caller]);
+
+        runtime
+            .call::<Actor>(
+                Method::Constructor as u64,
+                &cbor::serialize(&params, "test").unwrap(),
+            )
+            .unwrap();
+
+        runtime
+    }
+
+    #[test]
+    fn test_constructor() {
+        let runtime = construct_runtime();
+        assert_eq!(runtime.state.is_some(), true);
+        // let state: State = runtime.state().unwrap();
+    }
+
+    #[test]
+    fn test_join_fail_no_min_collateral() {
+        let mut runtime = construct_runtime();
+
+        let validator = Address::new_id(100);
+        let params = JoinParams {
+            validator_net_addr: validator.to_string(),
+        };
+
+        let r = runtime.call::<Actor>(
+            Method::Join as u64,
+            &cbor::serialize(&params, "test").unwrap(),
+        );
+
+        assert_eq!(
+            r,
+            Err(actor_error!(
+                illegal_argument,
+                "a minimum collateral is required to join the subnet"
+            ))
+        );
+    }
+
+    #[test]
+    fn test_join_works() {
+        let mut runtime = construct_runtime();
+
+        let caller = Address::new_id(10);
+        let validator = Address::new_id(100);
+        let start_token_value = 5_u64.pow(18);
+        let params = JoinParams {
+            validator_net_addr: validator.to_string(),
+        };
+
+        // Part 1. join without enough to be activated
+
+        // execution
+        let value = TokenAmount::from_atto(start_token_value);
+        runtime.set_value(value.clone());
+        runtime.set_caller(Cid::default(), caller.clone());
+        runtime
+            .call::<Actor>(
+                Method::Join as u64,
+                &cbor::serialize(&params, "test").unwrap(),
+            )
+            .unwrap();
+
+        // verify state.
+        // as the value is less than min collateral, state is initiated
+        let st: State = runtime.get_state();
+        assert_eq!(st.validator_set.len(), 0);
+        assert_eq!(st.status, Status::Instantiated);
+        assert_eq!(st.total_stake, value);
+        let stake = st.get_stake(runtime.store(), &caller).unwrap();
+        assert_eq!(stake.unwrap(), value);
+
+        // Part 2. miner adds stake and activates it
+        let value = TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT - start_token_value);
+        runtime.set_value(value.clone());
+        runtime.set_caller(Cid::default(), caller.clone());
+        runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
+        runtime.expect_send(
+            Address::new_id(IPC_GATEWAY_ADDR),
+            ipc_gateway::Method::Register as u64,
+            RawBytes::default(),
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT),
+            RawBytes::default(),
+            ExitCode::new(0),
+        );
+        runtime
+            .call::<Actor>(
+                Method::Join as u64,
+                &cbor::serialize(&params, "test").unwrap(),
+            )
+            .unwrap();
+
+        // verify state.
+        // as the value is less than min collateral, state is active
+        let st: State = runtime.get_state();
+        assert_eq!(st.validator_set.len(), 1);
+        assert_eq!(st.status, Status::Active);
+        assert_eq!(
+            st.total_stake,
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT)
+        );
+        let stake = st.get_stake(runtime.store(), &caller).unwrap();
+        assert_eq!(
+            stake.unwrap(),
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT)
+        );
+        runtime.verify();
+
+        // Part 3. miner joins already active subnet
+        let caller = Address::new_id(11);
+        let value = TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT);
+        runtime.set_value(value.clone());
+        runtime.set_caller(Cid::default(), caller.clone());
+        runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
+        runtime.expect_send(
+            Address::new_id(IPC_GATEWAY_ADDR),
+            ipc_gateway::Method::AddStake as u64,
+            RawBytes::default(),
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT),
+            RawBytes::default(),
+            ExitCode::new(0),
+        );
+        runtime
+            .call::<Actor>(
+                Method::Join as u64,
+                &cbor::serialize(&params, "test").unwrap(),
+            )
+            .unwrap();
+
+        // verify state.
+        // as the value is less than min collateral, state is active
+        let st: State = runtime.get_state();
+        assert_eq!(st.validator_set.len(), 1);
+        assert_eq!(st.status, Status::Active);
+        assert_eq!(
+            st.total_stake,
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT * 2)
+        );
+        let stake = st.get_stake(runtime.store(), &caller).unwrap();
+        assert_eq!(
+            stake.unwrap(),
+            TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT)
+        );
+        runtime.verify();
     }
 }

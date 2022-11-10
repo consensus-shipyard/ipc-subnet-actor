@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use cid::Cid;
 use fvm_ipld_blockstore::Blockstore;
 use fvm_ipld_encoding::Cbor;
@@ -12,7 +11,6 @@ use primitives::{TCid, THamt};
 use serde::{Deserialize, Serialize};
 
 use crate::types::*;
-use crate::ExpectedSend;
 
 // lazy_static! {
 //     static ref VOTING_THRESHOLD: Ratio<TokenAmount> =
@@ -24,7 +22,7 @@ use crate::ExpectedSend;
 pub struct State {
     pub name: String,
     pub parent_id: SubnetID,
-    pub sca_actor_addr: Address,
+    pub ipc_gateway_addr: Address,
     pub consensus: ConsensusType,
     pub min_validator_stake: TokenAmount,
     pub total_stake: TokenAmount,
@@ -37,7 +35,6 @@ pub struct State {
     pub window_checks: TCid<THamt<Cid, Votes>>,
     pub validator_set: Vec<Validator>,
     pub min_validators: u64,
-    pub expected_msg: Vec<ExpectedSend>,
 }
 
 impl Cbor for State {}
@@ -52,7 +49,7 @@ impl State {
         let state = State {
             name: params.name,
             parent_id: params.parent,
-            sca_actor_addr: Address::new_id(params.sca_actor_addr),
+            ipc_gateway_addr: Address::new_id(params.ipc_gateway_addr),
             consensus: params.consensus,
             total_stake: TokenAmount::zero(),
             min_validator_stake: if params.min_validator_stake < min_stake {
@@ -73,10 +70,21 @@ impl State {
             stake: TCid::new_hamt(store)?,
             window_checks: TCid::new_hamt(store)?,
             validator_set: Vec::new(),
-            expected_msg: Vec::new(),
         };
 
         Ok(state)
+    }
+
+    #[cfg(test)]
+    /// Get the stake of an address. Currently enabled only in tests
+    pub(crate) fn get_stake<BS: Blockstore>(
+        &self,
+        store: &BS,
+        addr: &Address,
+    ) -> anyhow::Result<Option<TokenAmount>> {
+        let hamt = self.stake.load(store)?;
+        let amount = hamt.get(&BytesKey::from(addr.to_bytes()))?;
+        Ok(amount.cloned())
     }
 
     /// Adds stake from a validator
@@ -88,24 +96,21 @@ impl State {
         amount: &TokenAmount,
     ) -> anyhow::Result<()> {
         // update miner stake
-        let mut bt: TCid<THamt<Cid, TokenAmount>> = TCid::new_hamt(store)?;
+        self.stake.modify(store, |hamt| {
+            // TODO: Note that when trying to get stake, if it is not found in the
+            // hamt, that means it's the first time adding stake and we just
+            // give default stake amount 0.
+            let key = BytesKey::from(addr.to_bytes());
+            let stake = hamt.get(&key)?.unwrap_or(&TokenAmount::zero()).clone();
+            let updated_stake = stake + amount;
 
-        let cloned_amount = amount.clone();
-        bt.modify(store, |hamt| {
-            let stake = hamt
-                .get(&BytesKey::from(addr.to_bytes()))?
-                .ok_or_else(|| anyhow!(format!("error getting stake from Hamt: {:?}", addr)))?
-                .clone();
-            let updated_stake = stake.clone() + cloned_amount;
-
-            // TODO: do I need to flush here? Seems from other repo, there is no need?
-            hamt.set(BytesKey::from(addr.to_bytes()), updated_stake)?;
+            hamt.set(key, updated_stake.clone())?;
 
             // update total collateral
             self.total_stake += amount;
 
             // check if the miner has collateral to become a validator
-            if stake >= self.min_validator_stake
+            if updated_stake >= self.min_validator_stake
                 && (self.consensus != ConsensusType::Delegated || self.validator_set.is_empty())
             {
                 self.validator_set.push(Validator {
@@ -354,7 +359,7 @@ impl Default for State {
         Self {
             name: String::new(),
             parent_id: SubnetID::default(),
-            sca_actor_addr: Address::new_id(0),
+            ipc_gateway_addr: Address::new_id(0),
             consensus: ConsensusType::Delegated,
             min_validator_stake: TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT),
             total_stake: TokenAmount::zero(),
@@ -367,7 +372,6 @@ impl Default for State {
             window_checks: TCid::default(),
             validator_set: Vec::new(),
             min_validators: 0,
-            expected_msg: Vec::new(),
         }
     }
 }

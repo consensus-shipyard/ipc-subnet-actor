@@ -1,9 +1,10 @@
 use fvm_ipld_encoding::repr::*;
 use fvm_ipld_encoding::tuple::{Deserialize_tuple, Serialize_tuple};
-use fvm_ipld_encoding::Cbor;
+use fvm_ipld_encoding::{Cbor, RawBytes};
 use fvm_shared::address::Address;
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::econ::TokenAmount;
+use fvm_shared::MethodNum;
 use ipc_gateway::SubnetID;
 
 /// Optional leaving coefficient to penalize
@@ -53,7 +54,7 @@ pub enum Status {
 pub struct ConstructParams {
     pub parent: SubnetID,
     pub name: String,
-    pub sca_actor_addr: u64,
+    pub ipc_gateway_addr: u64,
     pub consensus: ConsensusType,
     pub min_validator_stake: TokenAmount,
     pub min_validators: u64,
@@ -71,3 +72,21 @@ pub struct JoinParams {
     pub validator_net_addr: String,
 }
 impl Cbor for JoinParams {}
+
+pub(crate) struct CrossActorPayload {
+    pub to: Address,
+    pub method: MethodNum,
+    pub params: RawBytes,
+    pub value: TokenAmount,
+}
+
+impl CrossActorPayload {
+    pub fn new(to: Address, method: MethodNum, params: RawBytes, value: TokenAmount) -> Self {
+        Self {
+            to,
+            method,
+            params,
+            value,
+        }
+    }
+}
