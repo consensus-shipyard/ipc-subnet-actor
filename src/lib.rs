@@ -1,3 +1,5 @@
+#![feature(is_some_and)]
+
 pub mod ext;
 pub mod state;
 pub mod types;
@@ -10,7 +12,7 @@ use fvm_ipld_encoding::RawBytes;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::error::ExitCode;
 use fvm_shared::{MethodNum, METHOD_CONSTRUCTOR};
-use ipc_gateway::MIN_COLLATERAL_AMOUNT;
+use ipc_gateway::{FundParams, MIN_COLLATERAL_AMOUNT};
 use num_derive::FromPrimitive;
 use num_traits::{FromPrimitive, Zero};
 
@@ -25,8 +27,8 @@ fil_actors_runtime::wasm_trampoline!(Actor);
 pub enum Method {
     Constructor = METHOD_CONSTRUCTOR,
     Join = 2,
-    // Leave = 3,
-    // Kill = 4,
+    Leave = 3,
+    Kill = 4,
     // SubmitCheckpoint = 5,
 }
 
@@ -45,10 +47,16 @@ pub trait SubnetActor {
     where
         BS: Blockstore,
         RT: Runtime<BS>;
-    // /// Called by peers to leave a subnet.
-    // fn leave() -> anyhow::Result<Option<RawBytes>>;
-    // /// Sends a kill signal for the subnet to the SCA.
-    // fn kill() -> anyhow::Result<Option<RawBytes>>;
+    /// Called by peers to leave a subnet.
+    fn leave<BS, RT>(rt: &mut RT) -> Result<Option<RawBytes>, ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>;
+    /// Sends a kill signal for the subnet to the SCA.
+    fn kill<BS, RT>(rt: &mut RT) -> Result<Option<RawBytes>, ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>;
     // /// Submits a new checkpoint for the subnet.
     // fn submit_checkpoint(ch: Checkpoint) -> anyhow::Result<Option<RawBytes>>;
 }
@@ -143,78 +151,104 @@ impl SubnetActor for Actor {
         Ok(None)
     }
 
-    // /// Called by peers looking to leave a subnet.
-    // fn leave() -> anyhow::Result<Option<RawBytes>> {
-    //     let mut st = State::load();
-    //     let caller = Address::new_id(sdk::message::caller());
-    //     // check type of caller
-    //     let code_cid = get_actor_code_cid(&caller).unwrap_or(Cid::default());
-    //     if sdk::actor::get_builtin_actor_type(&code_cid) != Some(Type::Account) {
-    //         abort!(USR_FORBIDDEN, "caller not account actor type");
-    //     }
-    //
-    //     // get stake to know how much to release
-    //     let bt = make_map_with_root::<_, BigIntDe>(&st.stake, &Blockstore)?;
-    //     let stake = get_stake(&bt, &caller.clone())?;
-    //     if stake == TokenAmount::zero() {
-    //         abort!(USR_ILLEGAL_STATE, "caller has no stake in subnet");
-    //     }
-    //
-    //     // release from SCA
-    //     if st.status != Status::Terminating {
-    //         st.send(
-    //             &Address::new_id(ext::sca::sca_actor_addr),
-    //             Method::ReleaseStake as u64,
-    //             RawBytes::serialize(FundParams {
-    //                 value: stake.clone(),
-    //             })?,
-    //             TokenAmount::zero(),
-    //         )?;
-    //     }
-    //
-    //     // remove stake from balance table
-    //     st.rm_stake(&caller, &stake)?;
-    //
-    //     // send back to owner
-    //     st.send(&caller, METHOD_SEND, RawBytes::default(), stake)?;
-    //
-    //     st.mutate_state();
-    //     st.save();
-    //     Ok(None)
-    // }
-    //
-    // fn kill() -> anyhow::Result<Option<RawBytes>> {
-    //     let mut st = State::load();
-    //
-    //     if st.status == Status::Terminating || st.status == Status::Killed {
-    //         abort!(
-    //             USR_ILLEGAL_STATE,
-    //             "the subnet is already in a killed or terminating state"
-    //         );
-    //     }
-    //     if st.validator_set.len() != 0 {
-    //         abort!(
-    //             USR_ILLEGAL_STATE,
-    //             "this subnet can only be killed when all validators have left"
-    //         );
-    //     }
-    //
-    //     // move to terminating state
-    //     st.status = Status::Terminating;
-    //
-    //     // unregister subnet
-    //     st.send(
-    //         &Address::new_id(ext::sca::sca_actor_addr),
-    //         Method::Kill as u64,
-    //         RawBytes::default(),
-    //         TokenAmount::zero(),
-    //     )?;
-    //
-    //     st.mutate_state();
-    //     st.save();
-    //     Ok(None)
-    // }
-    //
+    /// Called by peers looking to leave a subnet.
+    fn leave<BS, RT>(rt: &mut RT) -> Result<Option<RawBytes>, ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>,
+    {
+        let caller = rt.message().caller();
+
+        // TODO: shall we check caller interface instead here?
+        // let code_cid = get_actor_code_cid(&caller).unwrap_or(Cid::default());
+        // if sdk::actor::get_builtin_actor_type(&code_cid) != Some(Type::Account) {
+        //     abort!(USR_FORBIDDEN, "caller not account actor type");
+        // }
+
+        let mut msg = None;
+        rt.transaction(|st: &mut State, rt| {
+            let stake = st.get_stake(rt.store(), &caller).map_err(|e| {
+                e.downcast_default(ExitCode::USR_ILLEGAL_STATE, "failed to load stake")
+            })?;
+
+            if stake.is_none() || stake.as_ref().is_some_and(|a| *a == TokenAmount::zero()) {
+                return Err(actor_error!(illegal_state, "caller has no stake in subnet"));
+            }
+
+            let stake = stake.unwrap();
+            if st.status != Status::Terminating {
+                msg = Some(CrossActorPayload::new(
+                    st.ipc_gateway_addr,
+                    ipc_gateway::Method::ReleaseStake as u64,
+                    RawBytes::serialize(FundParams {
+                        value: stake.clone(),
+                    })?,
+                    stake.clone(),
+                ));
+            }
+
+            // remove stake from balance table
+            st.rm_stake(&rt.store(), &caller, &stake).map_err(|e| {
+                e.downcast_default(ExitCode::USR_ILLEGAL_STATE, "cannot remove stake")
+            })?;
+
+            // now caller should have 0 balance now
+            st.mutate_state(&TokenAmount::zero());
+
+            Ok(true)
+        })?;
+
+        if let Some(p) = msg {
+            rt.send(p.to, p.method, p.params, p.value)?;
+        }
+
+        Ok(None)
+    }
+
+    fn kill<BS, RT>(rt: &mut RT) -> Result<Option<RawBytes>, ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>,
+    {
+        let mut msg = None;
+        rt.transaction(|st: &mut State, _| {
+            if st.status == Status::Terminating || st.status == Status::Killed {
+                return Err(actor_error!(
+                    illegal_state,
+                    "the subnet is already in a killed or terminating state"
+                ));
+            }
+
+            if !st.validator_set.is_empty() || st.total_stake != TokenAmount::zero() {
+                return Err(actor_error!(
+                    illegal_state,
+                    "this subnet can only be killed when all validators have left"
+                ));
+            }
+
+            // move to terminating state
+            st.status = Status::Terminating;
+
+            st.mutate_state(&TokenAmount::zero());
+
+            msg = Some(CrossActorPayload::new(
+                st.ipc_gateway_addr,
+                ipc_gateway::Method::Kill as u64,
+                RawBytes::default(),
+                TokenAmount::zero(),
+            ));
+
+            Ok(true)
+        })?;
+
+        // unregister subnet
+        if let Some(p) = msg {
+            rt.send(p.to, p.method, p.params, p.value)?;
+        }
+
+        Ok(None)
+    }
+
     // /// SubmitCheckpoint accepts signed checkpoint votes for miners.
     // ///
     // /// This functions verifies that the checkpoint is valid before
@@ -299,6 +333,14 @@ impl ActorCode for Actor {
             }
             Some(Method::Join) => {
                 let res = Self::join(rt, cbor::deserialize_params(params)?)?;
+                Ok(RawBytes::serialize(res)?)
+            }
+            Some(Method::Leave) => {
+                let res = Self::leave(rt)?;
+                Ok(RawBytes::serialize(res)?)
+            }
+            Some(Method::Kill) => {
+                let res = Self::kill(rt)?;
                 Ok(RawBytes::serialize(res)?)
             }
             None => Err(actor_error!(unhandled_message; "Invalid method")),
