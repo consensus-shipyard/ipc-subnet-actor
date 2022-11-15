@@ -104,7 +104,7 @@ impl SubnetActor for Actor {
         // }
 
         let amount = rt.message().value_received();
-        if amount <= TokenAmount::zero() {
+        if amount == TokenAmount::zero() {
             return Err(actor_error!(
                 illegal_argument,
                 "a minimum collateral is required to join the subnet"
@@ -119,15 +119,15 @@ impl SubnetActor for Actor {
                     e.downcast_default(ExitCode::USR_ILLEGAL_STATE, "failed to load subnet")
                 })?;
 
-            let cur_balance = st.total_stake.clone();
+            let total_stake = st.total_stake.clone();
 
             if st.status == Status::Instantiated {
-                if cur_balance >= TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT) {
+                if total_stake >= TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT) {
                     msg = Some(CrossActorPayload::new(
                         st.ipc_gateway_addr,
                         ipc_gateway::Method::Register as u64,
                         RawBytes::default(),
-                        st.total_stake.clone(),
+                        total_stake,
                     ));
                 }
             } else {
@@ -139,14 +139,18 @@ impl SubnetActor for Actor {
                 ));
             }
 
-            st.mutate_state(&cur_balance);
+            st.mutate_state();
 
             Ok(true)
         })?;
 
+        println!("before {:?}", rt.current_balance());
+
         if let Some(p) = msg {
             rt.send(p.to, p.method, p.params, p.value)?;
         }
+
+        println!("after {:?}", rt.current_balance());
 
         Ok(None)
     }
@@ -183,7 +187,7 @@ impl SubnetActor for Actor {
                     RawBytes::serialize(FundParams {
                         value: stake.clone(),
                     })?,
-                    stake.clone(),
+                    TokenAmount::zero(),
                 ));
             }
 
@@ -192,8 +196,7 @@ impl SubnetActor for Actor {
                 e.downcast_default(ExitCode::USR_ILLEGAL_STATE, "cannot remove stake")
             })?;
 
-            // now caller should have 0 balance now
-            st.mutate_state(&TokenAmount::zero());
+            st.mutate_state();
 
             Ok(true)
         })?;
@@ -210,6 +213,13 @@ impl SubnetActor for Actor {
         BS: Blockstore,
         RT: Runtime<BS>,
     {
+        if rt.current_balance() != TokenAmount::zero() {
+            return Err(actor_error!(
+                illegal_state,
+                format!("the subnet has non-zero balance: {:}", rt.current_balance())
+            ));
+        }
+
         let mut msg = None;
         rt.transaction(|st: &mut State, _| {
             if st.status == Status::Terminating || st.status == Status::Killed {
@@ -229,7 +239,7 @@ impl SubnetActor for Actor {
             // move to terminating state
             st.status = Status::Terminating;
 
-            st.mutate_state(&TokenAmount::zero());
+            st.mutate_state();
 
             msg = Some(CrossActorPayload::new(
                 st.ipc_gateway_addr,

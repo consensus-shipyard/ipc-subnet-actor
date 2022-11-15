@@ -196,7 +196,7 @@ impl State {
     //     Ok(Ratio::from_integer(sum) / ftotal >= *VOTING_THRESHOLD)
     // }
     //
-    pub fn mutate_state(&mut self, cur_balance: &TokenAmount) {
+    pub fn mutate_state(&mut self) {
         match self.status {
             Status::Instantiated => {
                 if self.total_stake >= TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT) {
@@ -216,8 +216,7 @@ impl State {
             // if no total_stake and current_balance left (except if we are testing where the funds
             // are never leaving the actor)
             Status::Terminating => {
-                if self.total_stake == TokenAmount::zero() && (*cur_balance == TokenAmount::zero())
-                {
+                if self.total_stake == TokenAmount::zero() {
                     self.status = Status::Killed
                 }
             }
