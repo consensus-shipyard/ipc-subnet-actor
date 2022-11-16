@@ -12,7 +12,7 @@ use fvm_ipld_encoding::RawBytes;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::error::ExitCode;
 use fvm_shared::{MethodNum, METHOD_CONSTRUCTOR};
-use ipc_gateway::{FundParams, MIN_COLLATERAL_AMOUNT};
+use ipc_gateway::{Checkpoint, FundParams, MIN_COLLATERAL_AMOUNT};
 use num_derive::FromPrimitive;
 use num_traits::{FromPrimitive, Zero};
 
@@ -29,7 +29,7 @@ pub enum Method {
     Join = 2,
     Leave = 3,
     Kill = 4,
-    // SubmitCheckpoint = 5,
+    SubmitCheckpoint = 5,
 }
 
 /// SubnetActor trait. Custom subnet actors need to implement this trait
@@ -57,8 +57,14 @@ pub trait SubnetActor {
     where
         BS: Blockstore,
         RT: Runtime<BS>;
-    // /// Submits a new checkpoint for the subnet.
-    // fn submit_checkpoint(ch: Checkpoint) -> anyhow::Result<Option<RawBytes>>;
+    /// Submits a new checkpoint for the subnet.
+    fn submit_checkpoint<BS, RT>(
+        rt: &mut RT,
+        ch: Checkpoint,
+    ) -> Result<Option<RawBytes>, ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>;
 }
 
 /// SubnetActor trait. Custom subnet actors need to implement this trait
@@ -259,6 +265,87 @@ impl SubnetActor for Actor {
         Ok(None)
     }
 
+    /// SubmitCheckpoint accepts signed checkpoint votes for miners.
+    ///
+    /// This functions verifies that the checkpoint is valid before
+    /// propagating it for commitment to the IPC gateway. It expects at least
+    /// votes from 2/3 of miners with collateral.
+    fn submit_checkpoint<BS, RT>(
+        rt: &mut RT,
+        ch: Checkpoint,
+    ) -> Result<Option<RawBytes>, ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>,
+    {
+        let state: State = rt.state()?;
+        let caller = rt.message().caller();
+
+        state
+            .verify_checkpoint(rt, &ch)
+            .map_err(|_| actor_error!(illegal_state, "checkpoint failed"))?;
+
+        rt.transaction(|st: &mut State, rt| {
+            let ch_cid = ch.cid();
+
+            let mut found = false;
+            let mut votes = match st
+                .get_vote(rt.store(), &ch_cid)
+                .map_err(|_| actor_error!(illegal_state, "cannot load votes"))?
+            {
+                Some(v) => {
+                    found = true;
+                    v
+                }
+                None => Votes {
+                    validators: Vec::new(),
+                },
+            };
+
+            if votes.validators.iter().any(|x| x == &caller) {
+                return Err(actor_error!(
+                    illegal_state,
+                    "miner has already voted the checkpoint"
+                ));
+            }
+
+            // add miner vote
+            votes.validators.push(caller);
+
+            // if has majority
+            if st
+                .has_majority_vote(rt.store(), &votes)
+                .map_err(|_| actor_error!(illegal_state, "cannot load votes"))?
+            {
+                st.flush_checkpoint(rt.store(), &ch)
+                    .map_err(|_| actor_error!(illegal_state, "cannot flush checkpoint"))?;
+            }
+            // commit checkpoint
+            //
+            //         // propagate to sca
+            //         st.send(
+            //             &Address::new_id(sca_actor_addr),
+            //             Method::CommitChildCheckpoint as u64,
+            //             RawBytes::serialize(checkpoint)?,
+            //             0.into(),
+            //         )?;
+            //         // remove votes used for commitment
+            //         if found {
+            //             votes_map.delete(&ch_cid.to_bytes())?;
+            //         }
+            //     } else {
+            //         // if no majority store vote and return
+            //         votes_map.set(ch_cid.to_bytes().into(), votes)?;
+            //     }
+
+            Ok(true)
+        })?;
+        todo!()
+        // let caller = rt.message().caller();
+        //
+        // let mut msg = None;
+    }
+
     // /// SubmitCheckpoint accepts signed checkpoint votes for miners.
     // ///
     // /// This functions verifies that the checkpoint is valid before
@@ -351,6 +438,10 @@ impl ActorCode for Actor {
             }
             Some(Method::Kill) => {
                 let res = Self::kill(rt)?;
+                Ok(RawBytes::serialize(res)?)
+            }
+            Some(Method::SubmitCheckpoint) => {
+                let res = Self::submit_checkpoint(rt, cbor::deserialize_params(params)?)?;
                 Ok(RawBytes::serialize(res)?)
             }
             None => Err(actor_error!(unhandled_message; "Invalid method")),
