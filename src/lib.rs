@@ -104,7 +104,7 @@ impl SubnetActor for Actor {
         // }
 
         let amount = rt.message().value_received();
-        if amount == TokenAmount::zero() {
+        if amount <= TokenAmount::zero() {
             return Err(actor_error!(
                 illegal_argument,
                 "a minimum collateral is required to join the subnet"
@@ -144,13 +144,9 @@ impl SubnetActor for Actor {
             Ok(true)
         })?;
 
-        println!("before {:?}", rt.current_balance());
-
         if let Some(p) = msg {
             rt.send(p.to, p.method, p.params, p.value)?;
         }
-
-        println!("after {:?}", rt.current_balance());
 
         Ok(None)
     }
