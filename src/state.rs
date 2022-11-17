@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use cid::Cid;
 use fvm_ipld_blockstore::Blockstore;
 use fvm_ipld_encoding::Cbor;
@@ -124,28 +125,44 @@ impl State {
         Ok(())
     }
 
-    // pub(crate) fn rm_stake(&mut self, addr: &Address, amount: &TokenAmount) -> anyhow::Result<()> {
-    //     // update miner stake
-    //     let mut bt = make_map_with_root::<_, BigIntDe>(&self.stake, &Blockstore)?;
-    //     let stake = get_stake(&bt, addr)
-    //         .map_err(|e| anyhow!(format!("error getting stake from Hamt: {:?}", e)))?;
-    //     // funds being returned
-    //     let mut stake = stake / LEAVING_COEFF;
-    //     stake -= amount;
-    //     set_stake(&mut bt, addr, stake.clone())?;
-    //     self.stake = bt.flush()?;
-    //
-    //     // update total collateral
-    //     self.total_stake -= amount;
-    //
-    //     // remove miner from list of validators
-    //     // NOTE: We currently only support full recovery of collateral.
-    //     // And additional check will be needed here if we consider part-recoveries.
-    //     self.validator_set.retain(|x| x.addr != *addr);
-    //
-    //     Ok(())
-    // }
-    //
+    pub fn rm_stake<BS: Blockstore>(
+        &mut self,
+        store: &BS,
+        addr: &Address,
+        amount: &TokenAmount,
+    ) -> anyhow::Result<()> {
+        // update miner stake
+        self.stake.modify(store, |hamt| {
+            // Note that when trying to get stake, if it is not found in the
+            // hamt, that means it's the first time adding stake and we just
+            // give default stake amount 0.
+            let key = BytesKey::from(addr.to_bytes());
+            let mut stake = hamt.get(&key)?.unwrap_or(&TokenAmount::zero()).clone();
+            stake = stake.div_floor(LEAVING_COEFF);
+
+            if stake.lt(amount) {
+                return Err(anyhow!(format!(
+                    "address not enough stake to withdraw: {:?}",
+                    addr
+                )));
+            }
+
+            hamt.set(key, stake - amount)?;
+
+            // update total collateral
+            self.total_stake -= amount;
+
+            // remove miner from list of validators
+            // NOTE: We currently only support full recovery of collateral.
+            // And additional check will be needed here if we consider part-recoveries.
+            self.validator_set.retain(|x| x.addr != *addr);
+
+            Ok(true)
+        })?;
+
+        Ok(())
+    }
+
     // /// Send new message from actor. It includes some custom code that is run
     // /// for test cases.
     // pub(crate) fn send(
@@ -179,7 +196,7 @@ impl State {
     //     Ok(Ratio::from_integer(sum) / ftotal >= *VOTING_THRESHOLD)
     // }
     //
-    pub(crate) fn mutate_state(&mut self, cur_balance: &TokenAmount) {
+    pub fn mutate_state(&mut self) {
         match self.status {
             Status::Instantiated => {
                 if self.total_stake >= TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT) {
@@ -199,8 +216,7 @@ impl State {
             // if no total_stake and current_balance left (except if we are testing where the funds
             // are never leaving the actor)
             Status::Terminating => {
-                if self.total_stake == TokenAmount::zero() && (*cur_balance == TokenAmount::zero())
-                {
+                if self.total_stake == TokenAmount::zero() {
                     self.status = Status::Killed
                 }
             }
