@@ -406,34 +406,3 @@ impl Default for State {
         }
     }
 }
-
-// pub fn set_checkpoint<BS: fvm_ipld_blockstore::Blockstore>(
-//     checkpoints: &mut Map<BS, Checkpoint>,
-//     ch: Checkpoint,
-// ) -> anyhow::Result<()> {
-//     let epoch = ch.epoch();
-//     checkpoints
-//         .set(BytesKey::from(epoch.to_ne_bytes().to_vec()), ch)
-//         .map_err(|e| anyhow!("failed to set checkpoint: {}", e))?;
-//     Ok(())
-// }
-//
-// pub fn get_votes<'m, BS: fvm_ipld_blockstore::Blockstore>(
-//     check_votes: &'m Map<BS, Votes>,
-//     cid: &Cid,
-// ) -> anyhow::Result<Option<&'m Votes>> {
-//     check_votes
-//         .get(&cid.to_bytes())
-//         .map_err(|e| anyhow!("failed to get checkpoint votes: {}", e))
-// }
-//
-// pub fn set_votes<BS: fvm_ipld_blockstore::Blockstore>(
-//     check_votes: &mut Map<BS, Votes>,
-//     cid: &Cid,
-//     votes: Votes,
-// ) -> anyhow::Result<()> {
-//     check_votes
-//         .set(cid.to_bytes().into(), votes)
-//         .map_err(|e| anyhow!("failed to set checkpoint votes: {}", e))?;
-//     Ok(())
-// }
