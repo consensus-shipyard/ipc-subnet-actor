@@ -213,6 +213,7 @@ impl SubnetActor for Actor {
         BS: Blockstore,
         RT: Runtime<BS>,
     {
+        // prevent a subnet from being killed until all its locked balance has been withdrawn
         if rt.current_balance() != TokenAmount::zero() {
             return Err(actor_error!(
                 illegal_state,
