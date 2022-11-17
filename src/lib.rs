@@ -285,14 +285,13 @@ impl SubnetActor for Actor {
             .verify_checkpoint(rt, &ch)
             .map_err(|_| actor_error!(illegal_state, "checkpoint failed"))?;
 
+        let mut msg = None;
+
         rt.transaction(|st: &mut State, rt| {
             let ch_cid = ch.cid();
 
             let mut found = false;
-            let mut votes = match st
-                .get_vote(rt.store(), &ch_cid)
-                .map_err(|_| actor_error!(illegal_state, "cannot load votes"))?
-            {
+            let mut votes = match st.get_votes(rt.store(), &ch_cid)? {
                 Some(v) => {
                     found = true;
                     v
@@ -313,37 +312,37 @@ impl SubnetActor for Actor {
             votes.validators.push(caller);
 
             // if has majority
-            if st
-                .has_majority_vote(rt.store(), &votes)
-                .map_err(|_| actor_error!(illegal_state, "cannot load votes"))?
-            {
+            if st.has_majority_vote(rt.store(), &votes)? {
+                // commit checkpoint
                 st.flush_checkpoint(rt.store(), &ch)
                     .map_err(|_| actor_error!(illegal_state, "cannot flush checkpoint"))?;
+
+                // prepare the message
+                msg = Some(CrossActorPayload::new(
+                    st.ipc_gateway_addr,
+                    ipc_gateway::Method::CommitChildCheckpoint as u64,
+                    RawBytes::serialize(ch)?,
+                    TokenAmount::zero(),
+                ));
+
+                // remove votes used for commitment
+                if found {
+                    st.remove_votes(rt.store(), &ch_cid)?;
+                }
+            } else {
+                // if no majority store vote and return
+                st.set_votes(rt.store(), &ch_cid, votes)?;
             }
-            // commit checkpoint
-            //
-            //         // propagate to sca
-            //         st.send(
-            //             &Address::new_id(sca_actor_addr),
-            //             Method::CommitChildCheckpoint as u64,
-            //             RawBytes::serialize(checkpoint)?,
-            //             0.into(),
-            //         )?;
-            //         // remove votes used for commitment
-            //         if found {
-            //             votes_map.delete(&ch_cid.to_bytes())?;
-            //         }
-            //     } else {
-            //         // if no majority store vote and return
-            //         votes_map.set(ch_cid.to_bytes().into(), votes)?;
-            //     }
 
             Ok(true)
         })?;
-        todo!()
-        // let caller = rt.message().caller();
-        //
-        // let mut msg = None;
+
+        // propagate to sca
+        if let Some(p) = msg {
+            rt.send(p.to, p.method, p.params, p.value)?;
+        }
+
+        Ok(None)
     }
 
     // /// SubmitCheckpoint accepts signed checkpoint votes for miners.

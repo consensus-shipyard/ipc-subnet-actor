@@ -3,6 +3,7 @@ use anyhow::anyhow;
 use cid::Cid;
 use fil_actors_runtime::cbor::deserialize;
 use fil_actors_runtime::runtime::Runtime;
+use fil_actors_runtime::{actor_error, ActorError};
 use fvm_ipld_blockstore::Blockstore;
 use fvm_ipld_encoding::{Cbor, RawBytes};
 use fvm_ipld_hamt::BytesKey;
@@ -84,10 +85,45 @@ impl State {
         Ok(state)
     }
 
-    pub fn get_vote<BS: Blockstore>(&self, store: &BS, cid: &Cid) -> anyhow::Result<Option<Votes>> {
-        let hamt = self.window_checks.load(store)?;
-        let amount = hamt.get(&cid.to_bytes())?;
+    pub fn get_votes<BS: Blockstore>(
+        &self,
+        store: &BS,
+        cid: &Cid,
+    ) -> Result<Option<Votes>, ActorError> {
+        let hamt = self
+            .window_checks
+            .load(store)
+            .map_err(|_| actor_error!(illegal_state, "cannot load votes hamt"))?;
+        let amount = hamt
+            .get(&BytesKey::from(cid.to_bytes()))
+            .map_err(|_| actor_error!(illegal_state, "cannot read votes"))?;
         Ok(amount.cloned())
+    }
+
+    pub fn remove_votes<BS: Blockstore>(&self, store: &BS, cid: &Cid) -> Result<(), ActorError> {
+        let mut hamt = self
+            .window_checks
+            .load(store)
+            .map_err(|_| actor_error!(illegal_state, "cannot load votes hamt"))?;
+        hamt.delete(&BytesKey::from(cid.to_bytes()))
+            .map_err(|_| actor_error!(illegal_state, "cannot remove votes from hamt"))?;
+        Ok(())
+    }
+
+    pub fn set_votes<BS: Blockstore>(
+        &mut self,
+        store: &BS,
+        cid: &Cid,
+        votes: Votes,
+    ) -> Result<(), ActorError> {
+        self.window_checks
+            .modify(store, |hamt| {
+                hamt.set(BytesKey::from(cid.to_bytes()), votes)
+                    .map_err(|_| actor_error!(illegal_state, "cannot set votes in hamt"))?;
+                Ok(true)
+            })
+            .map_err(|_| actor_error!(illegal_state, "cannot modify window checks"))?;
+        Ok(())
     }
 
     /// Get the stake of an address.
@@ -181,13 +217,13 @@ impl State {
         &self,
         store: &BS,
         votes: &Votes,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool, ActorError> {
         let mut sum = TokenAmount::zero();
         for v in &votes.validators {
             let stake = self
                 .get_stake(store, v)
-                .map_err(|e| anyhow!(format!("error getting stake from Hamt: {:?}", e)))?;
-            sum += stake.unwrap_or(TokenAmount::zero());
+                .map_err(|_| actor_error!(illegal_state, "cannot load stake from hamt"))?;
+            sum += stake.unwrap_or_else(TokenAmount::zero);
         }
         let ftotal = Ratio::from_integer(self.total_stake.atto().clone());
         Ok(Ratio::from_integer(sum.atto().clone()) / ftotal >= *VOTING_THRESHOLD)
@@ -251,9 +287,8 @@ impl State {
         }
 
         // check that a checkpoint for the epoch doesn't exist already.
-        match self.get_checkpoint(rt.store(), &ch.epoch())? {
-            Some(_) => return Err(anyhow!("cannot submit checkpoint for epoch")),
-            None => {}
+        if self.get_checkpoint(rt.store(), &ch.epoch())?.is_some() {
+            return Err(anyhow!("cannot submit checkpoint for epoch"));
         };
 
         // check that the epoch is correct
