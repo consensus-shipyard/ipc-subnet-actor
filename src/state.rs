@@ -100,13 +100,19 @@ impl State {
         Ok(amount.cloned())
     }
 
-    pub fn remove_votes<BS: Blockstore>(&self, store: &BS, cid: &Cid) -> Result<(), ActorError> {
-        let mut hamt = self
-            .window_checks
-            .load(store)
-            .map_err(|_| actor_error!(illegal_state, "cannot load votes hamt"))?;
-        hamt.delete(&BytesKey::from(cid.to_bytes()))
-            .map_err(|_| actor_error!(illegal_state, "cannot remove votes from hamt"))?;
+    pub fn remove_votes<BS: Blockstore>(
+        &mut self,
+        store: &BS,
+        cid: &Cid,
+    ) -> Result<(), ActorError> {
+        self.window_checks
+            .modify(store, |hamt| {
+                hamt.delete(&BytesKey::from(cid.to_bytes()))
+                    .map_err(|_| actor_error!(illegal_state, "cannot remove votes from hamt"))?;
+                Ok(true)
+            })
+            .map_err(|_| actor_error!(illegal_state, "cannot modify window checks"))?;
+
         Ok(())
     }
 
@@ -273,6 +279,10 @@ impl State {
         Ok(checkpoint)
     }
 
+    pub fn is_validator(&self, addr: &Address) -> bool {
+        self.validator_set.iter().any(|x| x.addr == *addr)
+    }
+
     /// Do not call this function in transaction
     pub fn verify_checkpoint<BS, RT>(&self, rt: &mut RT, ch: &Checkpoint) -> anyhow::Result<()>
     where
@@ -320,11 +330,6 @@ impl State {
             &ch.cid().to_bytes(),
         )?;
 
-        // verify that signer is a validator
-        if !self.validator_set.iter().any(|x| x.addr == caller) {
-            return Err(anyhow!("checkpoint not signed by a validator"));
-        }
-
         Ok(())
     }
 
@@ -345,12 +350,7 @@ impl State {
             TokenAmount::zero(),
         )?;
 
-        // if testing return a testing address without
-        // processing the response.
-        // FIXME: We should include some "expectedReturn" thing
-        // to dynamically select this.
-        let pub_key: Address = deserialize(&ret, "address response")?;
-        Ok(pub_key)
+        Ok(deserialize::<Address>(&ret, "address response")?)
     }
 
     fn prev_checkpoint_cid<BS: Blockstore>(

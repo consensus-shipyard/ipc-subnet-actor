@@ -150,13 +150,9 @@ impl SubnetActor for Actor {
             Ok(true)
         })?;
 
-        println!("before {:?}", rt.current_balance());
-
         if let Some(p) = msg {
             rt.send(p.to, p.method, p.params, p.value)?;
         }
-
-        println!("after {:?}", rt.current_balance());
 
         Ok(None)
     }
@@ -280,6 +276,10 @@ impl SubnetActor for Actor {
     {
         let state: State = rt.state()?;
         let caller = rt.message().caller();
+
+        if !state.is_validator(&caller) {
+            return Err(actor_error!(illegal_state, "not validator"));
+        }
 
         state
             .verify_checkpoint(rt, &ch)

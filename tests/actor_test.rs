@@ -2,17 +2,20 @@
 mod test {
     use cid::Cid;
     use fil_actors_runtime::runtime::Runtime;
-    use fil_actors_runtime::test_utils::{expect_abort, MockRuntime};
-    use fil_actors_runtime::{cbor, INIT_ACTOR_ADDR};
+    use fil_actors_runtime::test_utils::{expect_abort, ExpectedVerifySig, MockRuntime};
+    use fil_actors_runtime::{cbor, ActorError, INIT_ACTOR_ADDR};
     use fvm_ipld_encoding::RawBytes;
     use fvm_shared::address::Address;
+    use fvm_shared::crypto::signature::Signature;
     use fvm_shared::econ::TokenAmount;
     use fvm_shared::error::ExitCode;
-    use ipc_gateway::{FundParams, MIN_COLLATERAL_AMOUNT};
+    use ipc_gateway::{Checkpoint, FundParams, SubnetID, MIN_COLLATERAL_AMOUNT};
     use ipc_subnet_actor::{
-        Actor, ConsensusType, ConstructParams, JoinParams, Method, State, Status,
+        ext, Actor, ConsensusType, ConstructParams, JoinParams, Method, State, Status,
     };
     use num_traits::Zero;
+    use primitives::TCid;
+    use std::str::FromStr;
 
     // just a test address
     const IPC_GATEWAY_ADDR: u64 = 1024;
@@ -20,7 +23,7 @@ mod test {
 
     fn std_construct_param() -> ConstructParams {
         ConstructParams {
-            parent: Default::default(),
+            parent: SubnetID::from_str("/root").unwrap(),
             name: NETWORK_NAME.to_string(),
             ipc_gateway_addr: IPC_GATEWAY_ADDR,
             consensus: ConsensusType::Dummy,
@@ -32,10 +35,9 @@ mod test {
         }
     }
 
-    fn construct_runtime() -> MockRuntime {
+    fn construct_runtime_with_receiver(receiver: Address) -> MockRuntime {
         let caller = *INIT_ACTOR_ADDR;
-        let receiver = Address::new_id(1);
-        let mut runtime = MockRuntime::new(caller, receiver);
+        let mut runtime = MockRuntime::new(receiver, caller);
 
         let params = std_construct_param();
 
@@ -49,6 +51,11 @@ mod test {
             .unwrap();
 
         runtime
+    }
+
+    fn construct_runtime() -> MockRuntime {
+        let receiver = Address::new_id(1);
+        construct_runtime_with_receiver(receiver)
     }
 
     #[test]
@@ -410,133 +417,204 @@ mod test {
         assert_eq!(st.total_stake, TokenAmount::zero());
         assert_eq!(st.status, Status::Killed);
     }
-}
 
-// // #[test]
-// // fn test_submit_checkpoint() {
-// //     let mut h = Harness::new();
-// //     h.constructor(std_params());
-// //
-// //     let mut i = 0;
-// //     // add three validators
-// //     let senders: Vec<Address> = h.senders.m.keys().cloned().collect();
-// //     for addr in senders {
-// //         let value = TokenAmount::from(MIN_COLLATERAL_AMOUNT);
-// //         let params = std_join_params();
-// //         h.join(addr, value.clone(), params.clone());
-// //         let st = h.get_state();
-// //         let mut method = Method::AddStake as u64;
-// //         if i == 0 {
-// //             method = Method::Register as u64;
-// //         }
-// //         h.expect_send(
-// //             &st,
-// //             &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-// //             method,
-// //             RawBytes::default(),
-// //             TokenAmount::from(MIN_COLLATERAL_AMOUNT),
-// //         );
-// //         i += 1;
-// //         if i == 3 {
-// //             break;
-// //         }
-// //     }
-// //     // verify that we have an active subnet with 3 validators.
-// //     let st = h.get_state();
-// //     assert_eq!(st.validator_set.len(), 3);
-// //     assert_eq!(st.status, Status::Active);
-// //
-// //     // Send first checkpoint
-// //     let epoch = 10;
-// //     let sender = h.senders.get_sender_by_index(0).unwrap();
-// //     let ch = h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::OK);
-// //     let st = h.get_state();
-// //     h.verify_check_votes(&st, &ch.cid(), 1);
-// //     h.expect_send(
-// //         &st,
-// //         &sender,
-// //         ext::account::PUBKEY_ADDRESS_METHOD,
-// //         RawBytes::default(),
-// //         0.into(),
-// //     );
-// //     // no checkpoint committed yet.
-// //     h.verify_checkpoint(&st, &epoch, None);
-// //     // same miner shouldn't be allowed to submit checkpoint again
-// //     h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::USR_ILLEGAL_STATE);
-// //
-// //     let sender = h.senders.get_sender_by_index(1).unwrap();
-// //     let ch = h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::OK);
-// //     let st = h.get_state();
-// //     h.expect_send(
-// //         &st,
-// //         &sender,
-// //         ext::account::PUBKEY_ADDRESS_METHOD,
-// //         RawBytes::default(),
-// //         0.into(),
-// //     );
-// //     h.expect_send(
-// //         &st,
-// //         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-// //         Method::CommitChildCheckpoint as u64,
-// //         RawBytes::serialize(ch.clone()).unwrap(),
-// //         0.into(),
-// //     );
-// //     // 2/3 votes. Checkpoint committed
-// //     h.verify_checkpoint(&st, &epoch, Some(&ch));
-// //     // votes should have been cleaned
-// //     h.verify_check_votes(&st, &ch.cid(), 0);
-// //
-// //     // Trying to submit an already committed checkpoint should fail
-// //     let sender = h.senders.get_sender_by_index(2).unwrap();
-// //     h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::USR_ILLEGAL_STATE);
-// //
-// //     // If the epoch is wrong in the next checkpoint, it should be rejected.
-// //     let prev_cid = ch.cid();
-// //     let sender = h.senders.get_sender_by_index(0).unwrap();
-// //     h.submit_checkpoint(sender, 11, &prev_cid, ExitCode::USR_ILLEGAL_STATE);
-// //
-// //     // Only validators should be entitled to submit checkpoints.
-// //     let epoch = 20;
-// //     let sender = h.senders.get_sender_by_index(3).unwrap();
-// //     h.submit_checkpoint(sender, epoch, &prev_cid, ExitCode::USR_ILLEGAL_STATE);
-// //
-// //     let sender = h.senders.get_sender_by_index(0).unwrap();
-// //     // Using wrong prev_cid should fail
-// //     h.submit_checkpoint(sender, epoch, &Cid::default(), ExitCode::USR_ILLEGAL_STATE);
-// //
-// //     // Submit checkpoint for subsequent epoch
-// //     let ch = h.submit_checkpoint(sender, epoch, &prev_cid, ExitCode::OK);
-// //     let st = h.get_state();
-// //     h.verify_check_votes(&st, &ch.cid(), 1);
-// //     h.expect_send(
-// //         &st,
-// //         &sender,
-// //         ext::account::PUBKEY_ADDRESS_METHOD,
-// //         RawBytes::default(),
-// //         0.into(),
-// //     );
-// //     // no checkpoint committed yet.
-// //     h.verify_checkpoint(&st, &epoch, None);
-// //
-// //     let sender = h.senders.get_sender_by_index(1).unwrap();
-// //     let ch = h.submit_checkpoint(sender, epoch, &prev_cid, ExitCode::OK);
-// //     let st = h.get_state();
-// //     h.expect_send(
-// //         &st,
-// //         &sender,
-// //         ext::account::PUBKEY_ADDRESS_METHOD,
-// //         RawBytes::default(),
-// //         0.into(),
-// //     );
-// //     h.expect_send(
-// //         &st,
-// //         &Address::new_id(ext::sca::SCA_ACTOR_ADDR),
-// //         Method::CommitChildCheckpoint as u64,
-// //         RawBytes::serialize(ch.clone()).unwrap(),
-// //         0.into(),
-// //     );
-// //     // 2/3 votes. Checkpoint committed
-// //     h.verify_checkpoint(&st, &epoch, Some(&ch));
-// //     // votes should have been cleaned
-// //     h.verify_check_votes(&st, &ch.cid(), 0);
-// // }
+    #[test]
+    fn test_submit_checkpoint() {
+        let test_actor_address = Address::new_id(9999);
+        let mut runtime = construct_runtime_with_receiver(test_actor_address.clone());
+
+        let miners = vec![
+            Address::new_id(10),
+            Address::new_id(20),
+            Address::new_id(30),
+        ];
+        let validator = Address::new_id(100);
+        let params = JoinParams {
+            validator_net_addr: validator.to_string(),
+        };
+
+        // first miner joins the subnet
+        let value = TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT);
+
+        let mut i = 0;
+        for caller in &miners {
+            runtime.set_value(value.clone());
+            runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
+            runtime.set_caller(Cid::default(), caller.clone());
+
+            if i == 0 {
+                runtime.expect_send(
+                    Address::new_id(IPC_GATEWAY_ADDR),
+                    ipc_gateway::Method::Register as u64,
+                    RawBytes::default(),
+                    TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT),
+                    RawBytes::default(),
+                    ExitCode::new(0),
+                );
+            } else {
+                runtime.expect_send(
+                    Address::new_id(IPC_GATEWAY_ADDR),
+                    ipc_gateway::Method::AddStake as u64,
+                    RawBytes::default(),
+                    TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT),
+                    RawBytes::default(),
+                    ExitCode::new(0),
+                );
+            }
+
+            runtime
+                .call::<Actor>(
+                    Method::Join as u64,
+                    &cbor::serialize(&params, "test").unwrap(),
+                )
+                .unwrap();
+
+            i += 1;
+        }
+
+        // verify that we have an active subnet with 3 validators.
+        let st: State = runtime.get_state();
+        assert_eq!(st.validator_set.len(), 3);
+        assert_eq!(st.status, Status::Active);
+
+        // Generate the check point
+        let root_subnet = SubnetID::from_str("/root").unwrap();
+        let subnet = SubnetID::new(&root_subnet, test_actor_address);
+        let epoch = 10;
+        let mut checkpoint_0 = Checkpoint::new(subnet.clone(), epoch);
+        checkpoint_0.set_signature(
+            RawBytes::serialize(Signature::new_secp256k1(vec![1, 2, 3, 4]))
+                .unwrap()
+                .bytes()
+                .to_vec(),
+        );
+
+        // Only validators should be entitled to submit checkpoints.
+        let non_miner = Address::new_id(40);
+        runtime.set_caller(Cid::default(), non_miner.clone());
+        expect_abort(
+            ExitCode::USR_ILLEGAL_STATE,
+            runtime.call::<Actor>(
+                Method::SubmitCheckpoint as u64,
+                &cbor::serialize(&checkpoint_0, "test").unwrap(),
+            ),
+        );
+
+        // Send first checkpoint
+        let sender = miners.get(0).cloned().unwrap();
+        send_checkpoint(&mut runtime, sender.clone(), &checkpoint_0, false).unwrap();
+
+        let st: State = runtime.get_state();
+        let votes = st
+            .get_votes(runtime.store(), &checkpoint_0.cid())
+            .unwrap()
+            .unwrap();
+        assert_eq!(votes.validators, vec![sender.clone()]);
+        expect_abort(
+            ExitCode::USR_ILLEGAL_STATE,
+            send_checkpoint(&mut runtime, sender.clone(), &checkpoint_0, false),
+        );
+
+        // Send second checkpoint
+        let sender2 = miners.get(1).cloned().unwrap();
+        send_checkpoint(&mut runtime, sender2.clone(), &checkpoint_0, true).unwrap();
+
+        let st: State = runtime.get_state();
+        let votes = st.get_votes(runtime.store(), &checkpoint_0.cid()).unwrap();
+        assert_eq!(votes.is_none(), true);
+
+        // Trying to submit an already committed checkpoint should fail
+        let sender2 = miners.get(2).cloned().unwrap();
+        runtime.set_caller(Cid::default(), sender2.clone());
+        expect_abort(
+            ExitCode::USR_ILLEGAL_STATE,
+            runtime.call::<Actor>(
+                Method::SubmitCheckpoint as u64,
+                &cbor::serialize(&checkpoint_0, "test").unwrap(),
+            ),
+        );
+
+        // If the epoch is wrong in the next checkpoint, it should be rejected.
+        let prev_cid = checkpoint_0.cid();
+        let mut checkpoint_1 = Checkpoint::new(subnet.clone(), epoch + 1);
+        checkpoint_1.data.prev_check = TCid::from(prev_cid.clone());
+        runtime.set_caller(Cid::default(), sender.clone());
+        expect_abort(
+            ExitCode::USR_ILLEGAL_STATE,
+            runtime.call::<Actor>(
+                Method::SubmitCheckpoint as u64,
+                &cbor::serialize(&checkpoint_1, "test").unwrap(),
+            ),
+        );
+
+        // Submit checkpoint with invalid previous cid
+        let epoch = 20;
+        let mut checkpoint_3 = Checkpoint::new(subnet.clone(), epoch);
+        checkpoint_3.data.prev_check = TCid::from(Cid::default());
+        runtime.set_caller(Cid::default(), sender.clone());
+        expect_abort(
+            ExitCode::USR_ILLEGAL_STATE,
+            runtime.call::<Actor>(
+                Method::SubmitCheckpoint as u64,
+                &cbor::serialize(&checkpoint_3, "test").unwrap(),
+            ),
+        );
+
+        // Send correct payload
+        let epoch = 20;
+        let prev_cid = checkpoint_0.cid();
+        let mut checkpoint_4 = Checkpoint::new(subnet.clone(), epoch);
+        checkpoint_4.data.prev_check = TCid::from(prev_cid);
+        checkpoint_4.set_signature(
+            RawBytes::serialize(Signature::new_secp256k1(vec![1, 2, 3, 4]))
+                .unwrap()
+                .bytes()
+                .to_vec(),
+        );
+        send_checkpoint(&mut runtime, sender.clone(), &checkpoint_4, false).unwrap();
+        let st: State = runtime.get_state();
+        let votes = st
+            .get_votes(runtime.store(), &checkpoint_4.cid())
+            .unwrap()
+            .unwrap();
+        assert_eq!(votes.validators, vec![sender.clone()]);
+    }
+
+    fn send_checkpoint(
+        runtime: &mut MockRuntime,
+        sender: Address,
+        checkpoint: &Checkpoint,
+        is_commit: bool,
+    ) -> Result<RawBytes, ActorError> {
+        runtime.set_caller(Cid::default(), sender.clone());
+        runtime.expect_send(
+            sender.clone(),
+            ext::account::PUBKEY_ADDRESS_METHOD as u64,
+            RawBytes::default(),
+            TokenAmount::zero(),
+            cbor::serialize(&sender.clone(), "test").unwrap(),
+            ExitCode::new(0),
+        );
+        runtime.expect_verify_signature(ExpectedVerifySig {
+            sig: Signature::new_secp256k1(vec![1, 2, 3, 4]),
+            signer: sender.clone(),
+            plaintext: checkpoint.cid().to_bytes(),
+            result: Ok(()),
+        });
+
+        if is_commit {
+            runtime.expect_send(
+                Address::new_id(IPC_GATEWAY_ADDR),
+                ipc_gateway::Method::CommitChildCheckpoint as u64,
+                RawBytes::serialize(checkpoint)?,
+                TokenAmount::zero(),
+                cbor::serialize(&sender.clone(), "test").unwrap(),
+                ExitCode::new(0),
+            )
+        }
+        runtime.call::<Actor>(
+            Method::SubmitCheckpoint as u64,
+            &cbor::serialize(checkpoint, "test").unwrap(),
+        )
+    }
+}
