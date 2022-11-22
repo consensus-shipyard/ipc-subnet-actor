@@ -94,7 +94,7 @@ impl State {
             .window_checks
             .load(store)
             .map_err(|_| actor_error!(illegal_state, "cannot load votes hamt"))?;
-        let amount = hamt
+        let votes = hamt
             .get(&BytesKey::from(cid.to_bytes()))
             .map_err(|_| actor_error!(illegal_state, "cannot read votes"))?;
         Ok(amount.cloned())
