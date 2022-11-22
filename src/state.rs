@@ -97,7 +97,7 @@ impl State {
         let votes = hamt
             .get(&BytesKey::from(cid.to_bytes()))
             .map_err(|_| actor_error!(illegal_state, "cannot read votes"))?;
-        Ok(amount.cloned())
+        Ok(votes.cloned())
     }
 
     pub fn remove_votes<BS: Blockstore>(
