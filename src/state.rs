@@ -1,7 +1,6 @@
-use crate::ext;
 use anyhow::anyhow;
 use cid::Cid;
-use fil_actors_runtime::cbor::deserialize;
+use fil_actors_runtime::runtime::fvm::resolve_secp_bls;
 use fil_actors_runtime::runtime::Runtime;
 use fil_actors_runtime::{actor_error, ActorError};
 use fvm_ipld_blockstore::Blockstore;
@@ -322,7 +321,7 @@ impl State {
 
         // check signature
         let caller = rt.message().caller();
-        let pkey = self.resolve_secp_bls(rt, &caller)?;
+        let pkey = resolve_secp_bls(rt, &caller)?;
 
         rt.verify_signature(
             &RawBytes::deserialize(&ch.signature().clone().into())?,
@@ -331,26 +330,6 @@ impl State {
         )?;
 
         Ok(())
-    }
-
-    // we need mutable reference to self due to the expected message for testing.
-    fn resolve_secp_bls<BS, RT>(&self, rt: &RT, addr: &Address) -> anyhow::Result<Address>
-    where
-        BS: Blockstore,
-        RT: Runtime<BS>,
-    {
-        let resolved = match rt.resolve_address(addr) {
-            Some(id) => id,
-            None => return Err(anyhow!("couldn't resolve actor address")),
-        };
-        let ret = rt.send(
-            resolved,
-            ext::account::PUBKEY_ADDRESS_METHOD,
-            RawBytes::default(),
-            TokenAmount::zero(),
-        )?;
-
-        Ok(deserialize::<Address>(&ret, "address response")?)
     }
 
     fn prev_checkpoint_cid<BS: Blockstore>(
