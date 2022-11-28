@@ -563,6 +563,7 @@ dependencies = [
 [[package]]
 name = "fil_actors_runtime"
 version = "0.0.1"
+source = "git+https://github.com/consensus-shipyard/fvm-utils#d0c0c48020e8a8e8068c5f74a16ff35b60ab99d0"
 dependencies = [
  "anyhow",
  "base64",
@@ -877,6 +878,7 @@ dependencies = [
 [[package]]
 name = "ipc_gateway"
 version = "0.0.1"
+source = "git+https://github.com/consensus-shipyard/ipc-gateway#dc57a9b6e7c4cf261a327ee32f98a0efac502b82"
 dependencies = [
  "anyhow",
  "cid",
@@ -1240,6 +1242,7 @@ checksum = "eb9f9e6e233e5c4a35559a617bf40a4ec447db2e84c20b55a6f83167b7e57872"
 [[package]]
 name = "primitives"
 version = "0.1.0"
+source = "git+https://github.com/consensus-shipyard/fvm-utils#d0c0c48020e8a8e8068c5f74a16ff35b60ab99d0"
 dependencies = [
  "anyhow",
  "cid",
