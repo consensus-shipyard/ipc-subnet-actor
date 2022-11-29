@@ -73,6 +73,7 @@ mod test {
     #[test]
     fn test_join_fail_no_min_collateral() {
         let mut runtime = construct_runtime();
+        runtime.expect_validate_caller_any();
 
         let validator = Address::new_id(100);
         let params = JoinParams {
@@ -105,6 +106,7 @@ mod test {
         let value = TokenAmount::from_atto(start_token_value);
         runtime.set_value(value.clone());
         runtime.set_caller(Cid::default(), caller.clone());
+        runtime.expect_validate_caller_any();
         runtime
             .call::<Actor>(
                 Method::Join as u64,
@@ -126,6 +128,7 @@ mod test {
         runtime.set_value(value.clone());
         runtime.set_caller(Cid::default(), caller.clone());
         runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
+        runtime.expect_validate_caller_any();
         runtime.expect_send(
             Address::new_id(IPC_GATEWAY_ADDR),
             ipc_gateway::Method::Register as u64,
@@ -163,6 +166,7 @@ mod test {
         runtime.set_value(value.clone());
         runtime.set_caller(Cid::default(), caller.clone());
         runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
+        runtime.expect_validate_caller_any();
         runtime.expect_send(
             Address::new_id(IPC_GATEWAY_ADDR),
             ipc_gateway::Method::AddStake as u64,
@@ -212,6 +216,7 @@ mod test {
         runtime.set_value(value.clone());
         runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
         runtime.set_caller(Cid::default(), caller.clone());
+        runtime.expect_validate_caller_any();
         runtime.expect_send(
             Address::new_id(IPC_GATEWAY_ADDR),
             ipc_gateway::Method::Register as u64,
@@ -245,6 +250,7 @@ mod test {
         runtime.set_value(value.clone());
         runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
         runtime.set_caller(Cid::default(), caller.clone());
+        runtime.expect_validate_caller_any();
         runtime.expect_send(
             Address::new_id(IPC_GATEWAY_ADDR),
             ipc_gateway::Method::AddStake as u64,
@@ -279,6 +285,7 @@ mod test {
         runtime.set_value(value.clone());
         runtime.set_balance(TokenAmount::from_atto(5u64.pow(18)));
         runtime.set_caller(Cid::default(), caller.clone());
+        runtime.expect_validate_caller_any();
         runtime.expect_send(
             Address::new_id(IPC_GATEWAY_ADDR),
             ipc_gateway::Method::AddStake as u64,
@@ -306,8 +313,8 @@ mod test {
         let value = TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT);
         total_stake = total_stake - &value;
         runtime.set_value(value.clone());
-        // runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
         runtime.set_caller(Cid::default(), caller.clone());
+        runtime.expect_validate_caller_any();
         runtime.expect_send(
             Address::new_id(IPC_GATEWAY_ADDR),
             ipc_gateway::Method::ReleaseStake as u64,
@@ -333,7 +340,7 @@ mod test {
         );
 
         // subnet can't be killed if there are still miners
-
+        runtime.expect_validate_caller_any();
         expect_abort(
             ExitCode::USR_ILLEGAL_STATE,
             runtime.call::<Actor>(Method::Kill as u64, &RawBytes::default()),
@@ -345,6 +352,7 @@ mod test {
         total_stake = total_stake - &value;
         runtime.set_value(value.clone());
         runtime.set_caller(Cid::default(), caller.clone());
+        runtime.expect_validate_caller_any();
         runtime.expect_send(
             Address::new_id(IPC_GATEWAY_ADDR),
             ipc_gateway::Method::ReleaseStake as u64,
@@ -375,6 +383,7 @@ mod test {
         total_stake = total_stake - &value;
         runtime.set_value(value.clone());
         runtime.set_caller(Cid::default(), caller.clone());
+        runtime.expect_validate_caller_any();
         runtime.expect_send(
             Address::new_id(IPC_GATEWAY_ADDR),
             ipc_gateway::Method::ReleaseStake as u64,
@@ -400,8 +409,8 @@ mod test {
 
         // to kill the subnet
         runtime.set_value(value.clone());
-        // runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
         runtime.set_caller(Cid::default(), caller.clone());
+        runtime.expect_validate_caller_any();
         runtime.expect_send(
             Address::new_id(IPC_GATEWAY_ADDR),
             ipc_gateway::Method::Kill as u64,
@@ -441,7 +450,7 @@ mod test {
             runtime.set_value(value.clone());
             runtime.set_balance(TokenAmount::from_atto(MIN_COLLATERAL_AMOUNT));
             runtime.set_caller(Cid::default(), caller.clone());
-
+            runtime.expect_validate_caller_any();
             if i == 0 {
                 runtime.expect_send(
                     Address::new_id(IPC_GATEWAY_ADDR),
@@ -492,6 +501,7 @@ mod test {
         // Only validators should be entitled to submit checkpoints.
         let non_miner = Address::new_id(40);
         runtime.set_caller(Cid::default(), non_miner.clone());
+        runtime.expect_validate_caller_any();
         expect_abort(
             ExitCode::USR_ILLEGAL_STATE,
             runtime.call::<Actor>(
@@ -526,6 +536,7 @@ mod test {
         // Trying to submit an already committed checkpoint should fail
         let sender2 = miners.get(2).cloned().unwrap();
         runtime.set_caller(Cid::default(), sender2.clone());
+        runtime.expect_validate_caller_any();
         expect_abort(
             ExitCode::USR_ILLEGAL_STATE,
             runtime.call::<Actor>(
@@ -539,6 +550,7 @@ mod test {
         let mut checkpoint_1 = Checkpoint::new(subnet.clone(), epoch + 1);
         checkpoint_1.data.prev_check = TCid::from(prev_cid.clone());
         runtime.set_caller(Cid::default(), sender.clone());
+        runtime.expect_validate_caller_any();
         expect_abort(
             ExitCode::USR_ILLEGAL_STATE,
             runtime.call::<Actor>(
@@ -552,6 +564,7 @@ mod test {
         let mut checkpoint_3 = Checkpoint::new(subnet.clone(), epoch);
         checkpoint_3.data.prev_check = TCid::from(Cid::default());
         runtime.set_caller(Cid::default(), sender.clone());
+        runtime.expect_validate_caller_any();
         expect_abort(
             ExitCode::USR_ILLEGAL_STATE,
             runtime.call::<Actor>(
@@ -595,6 +608,7 @@ mod test {
             cbor::serialize(&sender.clone(), "test").unwrap(),
             ExitCode::new(0),
         );
+        runtime.expect_validate_caller_any();
         runtime.expect_verify_signature(ExpectedVerifySig {
             sig: Signature::new_secp256k1(vec![1, 2, 3, 4]),
             signer: sender.clone(),

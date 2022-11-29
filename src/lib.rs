@@ -102,12 +102,10 @@ impl SubnetActor for Actor {
         BS: Blockstore,
         RT: Runtime<BS>,
     {
+        rt.validate_immediate_caller_accept_any()?;
+
         let caller = rt.message().caller();
         // TODO: shall we check caller interface instead here?
-        // let code_cid = get_actor_code_cid(&caller).unwrap_or(Cid::default());
-        // if sdk::actor::get_builtin_actor_type(&code_cid) != Some(Type::Account) {
-        //     abort!(USR_FORBIDDEN, "caller not account actor type");
-        // }
 
         let amount = rt.message().value_received();
         if amount == TokenAmount::zero() {
@@ -163,6 +161,8 @@ impl SubnetActor for Actor {
         BS: Blockstore,
         RT: Runtime<BS>,
     {
+        rt.validate_immediate_caller_accept_any()?;
+
         let caller = rt.message().caller();
 
         // TODO: shall we check caller interface instead here?
@@ -215,6 +215,9 @@ impl SubnetActor for Actor {
         BS: Blockstore,
         RT: Runtime<BS>,
     {
+        rt.validate_immediate_caller_accept_any()?;
+
+        // prevent a subnet from being killed until all its locked balance has been withdrawn
         if rt.current_balance() != TokenAmount::zero() {
             return Err(actor_error!(
                 illegal_state,
@@ -274,6 +277,8 @@ impl SubnetActor for Actor {
         BS: Blockstore,
         RT: Runtime<BS>,
     {
+        rt.validate_immediate_caller_accept_any()?;
+
         let state: State = rt.state()?;
         let caller = rt.message().caller();
 
