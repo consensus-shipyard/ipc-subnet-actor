@@ -1,22 +1,30 @@
 use anyhow::anyhow;
 use cid::Cid;
+use fil_actors_runtime::runtime::fvm::resolve_secp_bls;
+use fil_actors_runtime::runtime::Runtime;
+use fil_actors_runtime::{actor_error, ActorError};
 use fvm_ipld_blockstore::Blockstore;
-use fvm_ipld_encoding::Cbor;
+use fvm_ipld_encoding::{Cbor, RawBytes};
 use fvm_ipld_hamt::BytesKey;
 use fvm_shared::address::Address;
 use fvm_shared::bigint::Zero;
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::econ::TokenAmount;
 use ipc_gateway::{Checkpoint, SubnetID, DEFAULT_CHECKPOINT_PERIOD, MIN_COLLATERAL_AMOUNT};
+use lazy_static::lazy_static;
+use num::rational::Ratio;
+use num::BigInt;
 use primitives::{TCid, THamt};
 use serde::{Deserialize, Serialize};
 
 use crate::types::*;
 
-// lazy_static! {
-//     static ref VOTING_THRESHOLD: Ratio<TokenAmount> =
-//         Ratio::new(TokenAmount::from_atto(2), TokenAmount::from_atto(3));
-// }
+lazy_static! {
+    static ref VOTING_THRESHOLD: Ratio<BigInt> = Ratio::new(
+        TokenAmount::from_atto(2).atto().clone(),
+        TokenAmount::from_atto(3).atto().clone()
+    );
+}
 
 /// The state object.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -74,6 +82,53 @@ impl State {
         };
 
         Ok(state)
+    }
+
+    pub fn get_votes<BS: Blockstore>(
+        &self,
+        store: &BS,
+        cid: &Cid,
+    ) -> Result<Option<Votes>, ActorError> {
+        let hamt = self
+            .window_checks
+            .load(store)
+            .map_err(|_| actor_error!(illegal_state, "cannot load votes hamt"))?;
+        let votes = hamt
+            .get(&BytesKey::from(cid.to_bytes()))
+            .map_err(|_| actor_error!(illegal_state, "cannot read votes"))?;
+        Ok(votes.cloned())
+    }
+
+    pub fn remove_votes<BS: Blockstore>(
+        &mut self,
+        store: &BS,
+        cid: &Cid,
+    ) -> Result<(), ActorError> {
+        self.window_checks
+            .modify(store, |hamt| {
+                hamt.delete(&BytesKey::from(cid.to_bytes()))
+                    .map_err(|_| actor_error!(illegal_state, "cannot remove votes from hamt"))?;
+                Ok(true)
+            })
+            .map_err(|_| actor_error!(illegal_state, "cannot modify window checks"))?;
+
+        Ok(())
+    }
+
+    pub fn set_votes<BS: Blockstore>(
+        &mut self,
+        store: &BS,
+        cid: &Cid,
+        votes: Votes,
+    ) -> Result<(), ActorError> {
+        self.window_checks
+            .modify(store, |hamt| {
+                hamt.set(BytesKey::from(cid.to_bytes()), votes)
+                    .map_err(|_| actor_error!(illegal_state, "cannot set votes in hamt"))?;
+                Ok(true)
+            })
+            .map_err(|_| actor_error!(illegal_state, "cannot modify window checks"))?;
+        Ok(())
     }
 
     /// Get the stake of an address.
@@ -163,39 +218,22 @@ impl State {
         Ok(())
     }
 
-    // /// Send new message from actor. It includes some custom code that is run
-    // /// for test cases.
-    // pub(crate) fn send(
-    //     &mut self,
-    //     to: &Address,
-    //     method: MethodNum,
-    //     params: RawBytes,
-    //     value: TokenAmount,
-    // ) -> anyhow::Result<RawBytes> {
-    //     self.expected_msg.push(ExpectedSend {
-    //         to: to.clone(),
-    //         method,
-    //         params,
-    //         value,
-    //     });
-    //
-    //     // Returning default RawBytes, we'll have to send expected instead to
-    //     // make it work in tests.
-    //     Ok(RawBytes::default())
-    // }
-    //
-    // pub(crate) fn has_majority_vote(&self, votes: &Votes) -> anyhow::Result<bool> {
-    //     let bt = make_map_with_root::<_, BigIntDe>(&self.stake, &Blockstore)?;
-    //     let mut sum = TokenAmount::from(0);
-    //     for v in &votes.validators {
-    //         let stake = get_stake(&bt, v)
-    //             .map_err(|e| anyhow!(format!("error getting stake from Hamt: {:?}", e)))?;
-    //         sum += stake;
-    //     }
-    //     let ftotal = Ratio::from_integer(self.total_stake.clone());
-    //     Ok(Ratio::from_integer(sum) / ftotal >= *VOTING_THRESHOLD)
-    // }
-    //
+    pub fn has_majority_vote<BS: Blockstore>(
+        &self,
+        store: &BS,
+        votes: &Votes,
+    ) -> Result<bool, ActorError> {
+        let mut sum = TokenAmount::zero();
+        for v in &votes.validators {
+            let stake = self
+                .get_stake(store, v)
+                .map_err(|_| actor_error!(illegal_state, "cannot load stake from hamt"))?;
+            sum += stake.unwrap_or_else(TokenAmount::zero);
+        }
+        let ftotal = Ratio::from_integer(self.total_stake.atto().clone());
+        Ok(Ratio::from_integer(sum.atto().clone()) / ftotal >= *VOTING_THRESHOLD)
+    }
+
     pub fn mutate_state(&mut self) {
         match self.status {
             Status::Instantiated => {
@@ -224,149 +262,106 @@ impl State {
         }
     }
 
-    // pub(crate) fn verify_checkpoint(&mut self, ch: &Checkpoint) -> anyhow::Result<()> {
-    //     // check that subnet is active
-    //     if self.status != Status::Active {
-    //         return Err(anyhow!(
-    //             "submitting checkpoints is not allowed while subnet is not active"
-    //         ));
-    //     }
-    //
-    //     // check that a checkpoint for the epoch doesn't exist already.
-    //     let checkpoints = make_map_with_root::<_, Checkpoint>(&self.checkpoints, &Blockstore)
-    //         .map_err(|e| anyhow!("failed to load checkpoints: {}", e))?;
-    //     match get_checkpoint(&checkpoints, &ch.epoch())? {
-    //         Some(_) => return Err(anyhow!("cannot submit checkpoint for epoch")),
-    //         None => {}
-    //     };
-    //
-    //     // check that the epoch is correct
-    //     if ch.epoch() % self.check_period != 0 {
-    //         return Err(anyhow!(
-    //             "epoch in checkpoint doesn't correspond with a signing window"
-    //         ));
-    //     }
-    //     // check the source is correct
-    //     // FIXME: Using to_string is a workaraound because builtin_actors and this package
-    //     // use different versions of fvm_shared
-    //     if ch.source().to_string()
-    //         != SubnetID::new(&self.parent_id, Address::new_id(sdk::message::receiver())).to_string()
-    //     {
-    //         return Err(anyhow!("submitting checkpoint with the wrong source"));
-    //     }
-    //     // check previous checkpoint
-    //     if self.prev_checkpoint_cid(&checkpoints, &ch.epoch())? != ch.prev_check() {
-    //         return Err(anyhow!(
-    //             "previous checkpoint not consistent with previously committed"
-    //         ));
-    //     }
-    //
-    //     // check signature
-    //     // FIXME: we should probably make this its own trait or
-    //     // function, as every implementation of the subnet actor should
-    //     // be entitled to perform its own signature verification.
-    //     // In this case we are verifying a signature of the validator over
-    //     // the cid of the checkpoint.
-    //     let caller = Address::new_id(sdk::message::caller());
-    //     // FIXME: We are skipping the signature verification for
-    //     // testing. This is not good.
-    //     let pkey = self.resolve_secp_bls(&caller)?;
-    //     if !sdk::crypto::verify_signature(
-    //         &RawBytes::deserialize(&ch.signature().clone().into())?,
-    //         &pkey,
-    //         &ch.cid().to_bytes(),
-    //     )? {
-    //         return Err(anyhow!("signature verification failed"));
-    //     }
-    //
-    //     // verify that signer is a validator
-    //     if !self.validator_set.iter().any(|x| x.addr == caller) {
-    //         return Err(anyhow!("checkpoint not signed by a validator"));
-    //     }
-    //
-    //     Ok(())
-    // }
-    //
-    // // we need mutable reference to self due to the expected message for testing.
-    // fn resolve_secp_bls(&mut self, addr: &Address) -> anyhow::Result<Address> {
-    //     let resolved = match sdk::actor::resolve_address(addr) {
-    //         Some(id) => Address::new_id(id),
-    //         None => return Err(anyhow!("couldn't resolve actor address")),
-    //     };
-    //     let ret = self.send(
-    //         &resolved,
-    //         ext::account::PUBKEY_ADDRESS_METHOD,
-    //         RawBytes::default(),
-    //         TokenAmount::zero(),
-    //     )?;
-    //     // if testing return a testing address without
-    //     // processing the response.
-    //     // FIXME: We should include some "expectedReturn" thing
-    //     // to dynamically select this.
-    //     let pub_key: Address = deserialize(&ret, "address response")?;
-    //     Ok(pub_key)
-    // }
-    //
-    // fn prev_checkpoint_cid<BS: fvm_ipld_blockstore::Blockstore>(
-    //     &self,
-    //     checkpoints: &Map<BS, Checkpoint>,
-    //     epoch: &ChainEpoch,
-    // ) -> anyhow::Result<Cid> {
-    //     let mut epoch = epoch - self.check_period;
-    //     while epoch >= 0 {
-    //         match get_checkpoint(checkpoints, &epoch)? {
-    //             Some(ch) => return Ok(ch.cid()),
-    //             None => {
-    //                 epoch -= self.check_period;
-    //             }
-    //         }
-    //     }
-    //     Ok(Cid::default())
-    // }
-    //
-    // pub fn load() -> Self {
-    //     // First, load the current state root.
-    //     let root = match sdk::sself::root() {
-    //         Ok(root) => root,
-    //         Err(err) => abort!(USR_ILLEGAL_STATE, "failed to get root: {:?}", err),
-    //     };
-    //
-    //     // Load the actor state from the state tree.
-    //     match Blockstore.get_cbor::<Self>(&root) {
-    //         Ok(Some(state)) => state,
-    //         Ok(None) => abort!(USR_ILLEGAL_STATE, "state does not exist"),
-    //         Err(err) => abort!(USR_ILLEGAL_STATE, "failed to get state: {}", err),
-    //     }
-    // }
-    //
-    // pub(crate) fn flush_checkpoint<BS: fvm_ipld_blockstore::Blockstore>(
-    //     &mut self,
-    //     ch: &Checkpoint,
-    // ) -> anyhow::Result<()> {
-    //     let mut checkpoints = make_map_with_root::<_, Checkpoint>(&self.checkpoints, &Blockstore)
-    //         .map_err(|e| anyhow!("error loading checkpoints: {}", e))?;
-    //     set_checkpoint(&mut checkpoints, ch.clone())?;
-    //     self.checkpoints = checkpoints
-    //         .flush()
-    //         .map_err(|e| anyhow!("error flushing checkpoints: {}", e))?;
-    //     Ok(())
-    // }
-    //
-    // pub fn save(&self) -> Cid {
-    //     let serialized = match to_vec(self) {
-    //         Ok(s) => s,
-    //         Err(err) => abort!(USR_SERIALIZATION, "failed to serialize state: {:?}", err),
-    //     };
-    //     let cid = match sdk::ipld::put(Code::Blake2b256.into(), 32, DAG_CBOR, serialized.as_slice())
-    //     {
-    //         Ok(cid) => cid,
-    //         Err(err) => abort!(USR_SERIALIZATION, "failed to store initial state: {:}", err),
-    //     };
-    //     if let Err(err) = sdk::sself::set_root(&cid) {
-    //         abort!(USR_ILLEGAL_STATE, "failed to set root ciid: {:}", err);
-    //     }
-    //     cid
-    // }
+    fn get_checkpoint<BS: Blockstore>(
+        &self,
+        store: &BS,
+        epoch: &ChainEpoch,
+    ) -> anyhow::Result<Option<Checkpoint>> {
+        let hamt = self
+            .checkpoints
+            .load(store)
+            .map_err(|e| anyhow!("failed to load checkpoints: {}", e))?;
+        let checkpoint = hamt
+            .get(&BytesKey::from(epoch.to_ne_bytes().to_vec()))
+            .map_err(|e| anyhow!("failed to get checkpoint for id {}: {:?}", epoch, e))?
+            .cloned();
+        Ok(checkpoint)
+    }
+
+    pub fn is_validator(&self, addr: &Address) -> bool {
+        self.validator_set.iter().any(|x| x.addr == *addr)
+    }
+
+    /// Do not call this function in transaction
+    pub fn verify_checkpoint<BS, RT>(&self, rt: &mut RT, ch: &Checkpoint) -> anyhow::Result<()>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>,
+    {
+        // check that subnet is active
+        if self.status != Status::Active {
+            return Err(anyhow!(
+                "submitting checkpoints is not allowed while subnet is not active"
+            ));
+        }
+
+        // check that a checkpoint for the epoch doesn't exist already.
+        if self.get_checkpoint(rt.store(), &ch.epoch())?.is_some() {
+            return Err(anyhow!("cannot submit checkpoint for epoch"));
+        };
+
+        // check that the epoch is correct
+        if ch.epoch() % self.check_period != 0 {
+            return Err(anyhow!(
+                "epoch in checkpoint doesn't correspond with a signing window"
+            ));
+        }
+
+        // check the source is correct
+        if *ch.source() != SubnetID::new(&self.parent_id, rt.message().receiver()) {
+            return Err(anyhow!("submitting checkpoint with the wrong source"));
+        }
+
+        // check previous checkpoint
+        if self.prev_checkpoint_cid(rt.store(), &ch.epoch())? != ch.prev_check().cid() {
+            return Err(anyhow!(
+                "previous checkpoint not consistent with previously committed"
+            ));
+        }
+
+        // check signature
+        let caller = rt.message().caller();
+        let pkey = resolve_secp_bls(rt, &caller)?;
+
+        rt.verify_signature(
+            &RawBytes::deserialize(&ch.signature().clone().into())?,
+            &pkey,
+            &ch.cid().to_bytes(),
+        )?;
+
+        Ok(())
+    }
+
+    fn prev_checkpoint_cid<BS: Blockstore>(
+        &self,
+        store: &BS,
+        epoch: &ChainEpoch,
+    ) -> anyhow::Result<Cid> {
+        let mut epoch = epoch - self.check_period;
+        while epoch >= 0 {
+            match self.get_checkpoint(store, &epoch)? {
+                Some(ch) => return Ok(ch.cid()),
+                None => {
+                    epoch -= self.check_period;
+                }
+            }
+        }
+        Ok(Cid::default())
+    }
+
+    pub fn flush_checkpoint<BS: Blockstore>(
+        &mut self,
+        store: &BS,
+        ch: &Checkpoint,
+    ) -> anyhow::Result<()> {
+        let epoch = ch.epoch();
+        self.checkpoints.modify(store, |hamt| {
+            hamt.set(BytesKey::from(epoch.to_ne_bytes().to_vec()), ch.clone())
+                .map_err(|e| anyhow!("failed to set checkpoint: {:?}", e))?;
+            Ok(true)
+        })?;
+        Ok(())
+    }
 }
 
 impl Default for State {
@@ -390,66 +385,3 @@ impl Default for State {
         }
     }
 }
-
-// pub fn set_stake<BS: fvm_ipld_blockstore::Blockstore>(
-//     stakes: &mut Hamt<BS, BigIntDe>,
-//     addr: &Address,
-//     amount: TokenAmount,
-// ) -> anyhow::Result<()> {
-//     stakes
-//         .set(addr.to_bytes().into(), BigIntDe(amount))
-//         .map_err(|e| anyhow!(format!("failed to set stake for addr {}: {:?}", addr, e)))?;
-//     Ok(())
-// }
-
-// /// Gets token amount for given address in balance table
-// pub fn get_stake<'m, BS: fvm_ipld_blockstore::Blockstore>(
-//     stakes: &'m Hamt<BS, BigIntDe>,
-//     key: &Address,
-// ) -> Result<TokenAmount, HamtError> {
-//     if let Some(v) = stakes.get(&key.to_bytes())? {
-//         Ok(v.0.clone())
-//     } else {
-//         Ok(0.into())
-//     }
-// }
-
-// pub fn get_checkpoint<'m, BS: fvm_ipld_blockstore::Blockstore>(
-//     checkpoints: &'m Map<BS, Checkpoint>,
-//     epoch: &ChainEpoch,
-// ) -> anyhow::Result<Option<&'m Checkpoint>> {
-//     checkpoints
-//         .get(&BytesKey::from(epoch.to_ne_bytes().to_vec()))
-//         .map_err(|e| anyhow!("failed to get checkpoint for id {}: {}", epoch, e))
-// }
-
-// pub fn set_checkpoint<BS: fvm_ipld_blockstore::Blockstore>(
-//     checkpoints: &mut Map<BS, Checkpoint>,
-//     ch: Checkpoint,
-// ) -> anyhow::Result<()> {
-//     let epoch = ch.epoch();
-//     checkpoints
-//         .set(BytesKey::from(epoch.to_ne_bytes().to_vec()), ch)
-//         .map_err(|e| anyhow!("failed to set checkpoint: {}", e))?;
-//     Ok(())
-// }
-//
-// pub fn get_votes<'m, BS: fvm_ipld_blockstore::Blockstore>(
-//     check_votes: &'m Map<BS, Votes>,
-//     cid: &Cid,
-// ) -> anyhow::Result<Option<&'m Votes>> {
-//     check_votes
-//         .get(&cid.to_bytes())
-//         .map_err(|e| anyhow!("failed to get checkpoint votes: {}", e))
-// }
-//
-// pub fn set_votes<BS: fvm_ipld_blockstore::Blockstore>(
-//     check_votes: &mut Map<BS, Votes>,
-//     cid: &Cid,
-//     votes: Votes,
-// ) -> anyhow::Result<()> {
-//     check_votes
-//         .set(cid.to_bytes().into(), votes)
-//         .map_err(|e| anyhow!("failed to set checkpoint votes: {}", e))?;
-//     Ok(())
-// }

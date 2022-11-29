@@ -26,6 +26,7 @@ unsigned-varint = "0.7.1"
 num = "0.4.0"
 
 [dev-dependencies]
+# Enable test-utils only in dev
 fil_actors_runtime = { git = "https://github.com/consensus-shipyard/fvm-utils", features = ["fil-actor", "test_utils"] }
 base64 = "0.13.1"
 
