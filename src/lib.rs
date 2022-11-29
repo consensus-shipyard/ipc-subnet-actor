@@ -12,7 +12,7 @@ use fvm_ipld_encoding::RawBytes;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::error::ExitCode;
 use fvm_shared::{MethodNum, METHOD_CONSTRUCTOR};
-use ipc_gateway::{FundParams, MIN_COLLATERAL_AMOUNT};
+use ipc_gateway::{Checkpoint, FundParams, MIN_COLLATERAL_AMOUNT};
 use num_derive::FromPrimitive;
 use num_traits::{FromPrimitive, Zero};
 
@@ -29,7 +29,7 @@ pub enum Method {
     Join = 2,
     Leave = 3,
     Kill = 4,
-    // SubmitCheckpoint = 5,
+    SubmitCheckpoint = 5,
 }
 
 /// SubnetActor trait. Custom subnet actors need to implement this trait
@@ -57,8 +57,14 @@ pub trait SubnetActor {
     where
         BS: Blockstore,
         RT: Runtime<BS>;
-    // /// Submits a new checkpoint for the subnet.
-    // fn submit_checkpoint(ch: Checkpoint) -> anyhow::Result<Option<RawBytes>>;
+    /// Submits a new checkpoint for the subnet.
+    fn submit_checkpoint<BS, RT>(
+        rt: &mut RT,
+        ch: Checkpoint,
+    ) -> Result<Option<RawBytes>, ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>;
 }
 
 /// SubnetActor trait. Custom subnet actors need to implement this trait
@@ -104,7 +110,7 @@ impl SubnetActor for Actor {
         // }
 
         let amount = rt.message().value_received();
-        if amount <= TokenAmount::zero() {
+        if amount == TokenAmount::zero() {
             return Err(actor_error!(
                 illegal_argument,
                 "a minimum collateral is required to join the subnet"
@@ -209,7 +215,6 @@ impl SubnetActor for Actor {
         BS: Blockstore,
         RT: Runtime<BS>,
     {
-        // prevent a subnet from being killed until all its locked balance has been withdrawn
         if rt.current_balance() != TokenAmount::zero() {
             return Err(actor_error!(
                 illegal_state,
@@ -256,71 +261,89 @@ impl SubnetActor for Actor {
         Ok(None)
     }
 
-    // /// SubmitCheckpoint accepts signed checkpoint votes for miners.
-    // ///
-    // /// This functions verifies that the checkpoint is valid before
-    // /// propagating it for commitment to the SCA. It expects at least
-    // /// votes from 2/3 of miners with collateral.
-    // fn submit_checkpoint(checkpoint: Checkpoint) -> anyhow::Result<Option<RawBytes>> {
-    //     let mut st = State::load();
-    //     let caller = Address::new_id(sdk::message::caller());
-    //     // check type of caller
-    //     let code_cid = get_actor_code_cid(&caller).unwrap_or(Cid::default());
-    //     if sdk::actor::get_builtin_actor_type(&code_cid) != Some(Type::Account) {
-    //         abort!(USR_FORBIDDEN, "caller not account actor type");
-    //     }
-    //
-    //     let ch_cid = checkpoint.cid();
-    //     // verify checkpoint
-    //     st.verify_checkpoint(&checkpoint)?;
-    //
-    //     // get votes for committed checkpoint
-    //     let mut votes_map = make_map_with_root::<_, Votes>(&st.window_checks, &Blockstore)
-    //         .map_err(|e| anyhow!("failed to load checkpoints: {}", e))?;
-    //     let mut found = false;
-    //     let mut votes = match get_votes(&votes_map, &ch_cid)? {
-    //         Some(v) => {
-    //             found = true;
-    //             v.clone()
-    //         }
-    //         None => Votes {
-    //             validators: Vec::new(),
-    //         },
-    //     };
-    //
-    //     if votes.validators.iter().any(|x| x == &caller) {
-    //         return Err(anyhow!("miner has already voted the checkpoint"));
-    //     }
-    //
-    //     // add miner vote
-    //     votes.validators.push(caller);
-    //
-    //     // if has majority
-    //     if st.has_majority_vote(&votes)? {
-    //         // commit checkpoint
-    //         st.flush_checkpoint::<&Blockstore>(&checkpoint)?;
-    //         // propagate to sca
-    //         st.send(
-    //             &Address::new_id(sca_actor_addr),
-    //             Method::CommitChildCheckpoint as u64,
-    //             RawBytes::serialize(checkpoint)?,
-    //             0.into(),
-    //         )?;
-    //         // remove votes used for commitment
-    //         if found {
-    //             votes_map.delete(&ch_cid.to_bytes())?;
-    //         }
-    //     } else {
-    //         // if no majority store vote and return
-    //         votes_map.set(ch_cid.to_bytes().into(), votes)?;
-    //     }
-    //
-    //     // flush votes
-    //     st.window_checks = votes_map.flush()?;
-    //
-    //     st.save();
-    //     Ok(None)
-    // }
+    /// SubmitCheckpoint accepts signed checkpoint votes for miners.
+    ///
+    /// This functions verifies that the checkpoint is valid before
+    /// propagating it for commitment to the IPC gateway. It expects at least
+    /// votes from 2/3 of miners with collateral.
+    fn submit_checkpoint<BS, RT>(
+        rt: &mut RT,
+        ch: Checkpoint,
+    ) -> Result<Option<RawBytes>, ActorError>
+    where
+        BS: Blockstore,
+        RT: Runtime<BS>,
+    {
+        let state: State = rt.state()?;
+        let caller = rt.message().caller();
+
+        if !state.is_validator(&caller) {
+            return Err(actor_error!(illegal_state, "not validator"));
+        }
+
+        state
+            .verify_checkpoint(rt, &ch)
+            .map_err(|_| actor_error!(illegal_state, "checkpoint failed"))?;
+
+        let mut msg = None;
+
+        rt.transaction(|st: &mut State, rt| {
+            let ch_cid = ch.cid();
+
+            let mut found = false;
+            let mut votes = match st.get_votes(rt.store(), &ch_cid)? {
+                Some(v) => {
+                    found = true;
+                    v
+                }
+                None => Votes {
+                    validators: Vec::new(),
+                },
+            };
+
+            if votes.validators.iter().any(|x| x == &caller) {
+                return Err(actor_error!(
+                    illegal_state,
+                    "miner has already voted the checkpoint"
+                ));
+            }
+
+            // add miner vote
+            votes.validators.push(caller);
+
+            // if has majority
+            if st.has_majority_vote(rt.store(), &votes)? {
+                // commit checkpoint
+                st.flush_checkpoint(rt.store(), &ch)
+                    .map_err(|_| actor_error!(illegal_state, "cannot flush checkpoint"))?;
+
+                // prepare the message
+                msg = Some(CrossActorPayload::new(
+                    st.ipc_gateway_addr,
+                    ipc_gateway::Method::CommitChildCheckpoint as u64,
+                    RawBytes::serialize(ch)?,
+                    TokenAmount::zero(),
+                ));
+
+                // remove votes used for commitment
+                if found {
+                    st.remove_votes(rt.store(), &ch_cid)?;
+                }
+            } else {
+                // if no majority store vote and return
+                st.set_votes(rt.store(), &ch_cid, votes)?;
+            }
+
+            Ok(true)
+        })?;
+
+        // propagate to sca
+        if let Some(p) = msg {
+            rt.send(p.to, p.method, p.params, p.value)?;
+        }
+
+        Ok(None)
+    }
 }
 
 impl ActorCode for Actor {
@@ -348,6 +371,10 @@ impl ActorCode for Actor {
             }
             Some(Method::Kill) => {
                 let res = Self::kill(rt)?;
+                Ok(RawBytes::serialize(res)?)
+            }
+            Some(Method::SubmitCheckpoint) => {
+                let res = Self::submit_checkpoint(rt, cbor::deserialize_params(params)?)?;
                 Ok(RawBytes::serialize(res)?)
             }
             None => Err(actor_error!(unhandled_message; "Invalid method")),
