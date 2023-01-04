@@ -1,4 +1,6 @@
-# IPC Subnet Actor
+# [Archived] IPC Subnet Actor
+> The code for the implementation of the IPC subnet actor has been moved to https://github.com/consensus-shipyard/ipc-actors. Refer to the maintained code there.
+
 Reference implementation of the InterPlanetary Consensus (IPC) subnet actor. This implementation
 targets the Filecoin FVM. Subnet actors are responsible for implementing the logic
 that governs the operation of subnets. 
